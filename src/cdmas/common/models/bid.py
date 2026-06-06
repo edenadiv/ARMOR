@@ -1,6 +1,6 @@
 """Resource bidding payloads for the sealed-bid auction (SDD §3.2.3)."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -15,11 +15,11 @@ class ResourceBid(BaseModel):
     quantity: int = 1
     bid_value: float = Field(ge=0.0, le=1.0)  # = threat severity (FR auction rule)
     justification_threat_id: str
-    submitted_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    submitted_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class AuctionResult(BaseModel):
     auction_id: str = Field(default_factory=lambda: str(uuid4()))
     granted: dict[str, int] = Field(default_factory=dict)  # bidder_id -> quantity
     denied: list[str] = Field(default_factory=list)
-    closed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    closed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

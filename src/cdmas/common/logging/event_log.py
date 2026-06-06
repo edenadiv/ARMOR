@@ -6,8 +6,9 @@ added in Phase 6.
 """
 
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -26,7 +27,7 @@ class EventType(StrEnum):
 
 
 class DecisionTrace(BaseModel):
-    inputs: dict = Field(default_factory=dict)
+    inputs: dict[str, Any] = Field(default_factory=dict)
     plan_selected: str
     reasoning: str
     action: str
@@ -37,11 +38,11 @@ class EventLog(BaseModel):
     lamport_ts: int
     wall_ms: float
     event_type: EventType
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     agent_id: str
     agent_type: str
     segment: str | None = None
-    payload: dict = Field(default_factory=dict)
+    payload: dict[str, Any] = Field(default_factory=dict)
     latency_ms: int | None = None
     decision_trace: DecisionTrace | None = None
 

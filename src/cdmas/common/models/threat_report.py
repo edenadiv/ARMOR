@@ -1,6 +1,6 @@
 """Threat report published by an Anomaly Classifier Agent (SDD §3.2.2)."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -16,4 +16,4 @@ class ThreatReport(BaseModel):
     severity: float = Field(ge=0.0, le=1.0)
     segment: Segment
     confidence: float = Field(ge=0.0, le=1.0)
-    classified_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    classified_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

@@ -31,7 +31,7 @@ class Subscription:
             return await self._queue.get()
         try:
             return await asyncio.wait_for(self._queue.get(), timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return None
 
     def get_nowait(self) -> ACLMessage | None:

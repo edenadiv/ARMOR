@@ -1,6 +1,6 @@
 """Alert payload published by a Traffic Monitor Agent (SDD §3.2.1)."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -13,7 +13,7 @@ def _uuid() -> str:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Alert(BaseModel):

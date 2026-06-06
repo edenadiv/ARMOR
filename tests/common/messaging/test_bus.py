@@ -23,7 +23,7 @@ async def test_fifo_delivery_and_lamport_stamp():
     m1 = await sub.get(timeout=1)
     m2 = await sub.get(timeout=1)
     assert (m1.content["n"], m2.content["n"]) == (1, 2)  # FIFO
-    assert m1.lamport_ts < m2.lamport_ts                  # bus-stamped total order
+    assert m1.lamport_ts < m2.lamport_ts  # bus-stamped total order
 
 
 async def test_idempotent_dedup():

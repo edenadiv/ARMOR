@@ -1,6 +1,6 @@
 """Resolution notice broadcast when a threat is neutralized (SDD §3.3.1)."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -13,4 +13,4 @@ class ResolutionNotice(BaseModel):
     threat_id: str
     segment: Segment
     outcome: str
-    resolved_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    resolved_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

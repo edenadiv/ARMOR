@@ -31,7 +31,9 @@ class _Echo(BaseAgent):
         self.plans.append(
             Plan(
                 plan_id="respond",
-                trigger=lambda b: b.value("last_alert") is not None and not b.value("responded", False),
+                trigger=lambda b: (
+                    b.value("last_alert") is not None and not b.value("responded", False)
+                ),
                 precondition=lambda b: True,
                 body=respond,
             )
@@ -39,7 +41,12 @@ class _Echo(BaseAgent):
 
     def on_message(self, message: ACLMessage) -> None:
         self.beliefs.revise(
-            Belief(predicate="last_alert", value=message.content.get("n"), source=message.sender, lamport_ts=message.lamport_ts)
+            Belief(
+                predicate="last_alert",
+                value=message.content.get("n"),
+                source=message.sender,
+                lamport_ts=message.lamport_ts,
+            )
         )
 
 
@@ -57,7 +64,14 @@ async def test_perceive_reason_act_cycle_and_dedup_seq():
 
     # Inject an alert as if from a TMA.
     await bus.publish(
-        ACLMessage(performative=Performative.INFORM, sender="TMA:seg1", receiver="BROADCAST", topic=Topic.ALERTS, seq=1, content={"n": 7})
+        ACLMessage(
+            performative=Performative.INFORM,
+            sender="TMA:seg1",
+            receiver="BROADCAST",
+            topic=Topic.ALERTS,
+            seq=1,
+            content={"n": 7},
+        )
     )
 
     await agent.step()  # perceive -> reason -> act
@@ -77,7 +91,14 @@ async def test_outbound_lamport_advances_on_receive():
     agent = _Echo(agent_id="ACA:seg1", segment="public-facing", bus=bus)
     agent.setup()
     await bus.publish(
-        ACLMessage(performative=Performative.INFORM, sender="TMA:seg1", receiver="BROADCAST", topic=Topic.ALERTS, seq=1, content={"n": 1})
+        ACLMessage(
+            performative=Performative.INFORM,
+            sender="TMA:seg1",
+            receiver="BROADCAST",
+            topic=Topic.ALERTS,
+            seq=1,
+            content={"n": 1},
+        )
     )
     before = agent.clock.time
     await agent.step()

@@ -75,6 +75,12 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC", "SIM", "RUF"]
+ignore = [
+    # on_message is an intentional optional override hook (no-op default) on BaseAgent.
+    "B027",
+    # Subscription.get(timeout=...) is the deliberate deadline-bounded bus API.
+    "ASYNC109",
+]
 
 [tool.mypy]
 python_version = "3.11"

@@ -7,7 +7,7 @@ def test_applicable_requires_trigger_and_precondition():
     bb = BeliefBase()
     bb.revise(Belief(predicate="anomaly", value=True, source="self", lamport_ts=1))
 
-    async def body(agent):  # noqa: ARG001
+    async def body(agent):
         return "done"
 
     plan = Plan(
@@ -24,7 +24,7 @@ def test_applicable_requires_trigger_and_precondition():
 
 
 def test_intention_binds_goal_and_plan():
-    async def body(agent):  # noqa: ARG001
+    async def body(agent):
         return None
 
     plan = Plan(plan_id="p", trigger=lambda b: True, precondition=lambda b: True, body=body)

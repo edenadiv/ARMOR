@@ -1,6 +1,6 @@
 """Error reply payloads: FAILURE and NOT-UNDERSTOOD (SDD §3.2.5, §3.2.6)."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -15,7 +15,7 @@ class Failure(BaseModel):
     failed_action: str
     description: str = ""
     fallback_action: str | None = None
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class NotUnderstood(BaseModel):
@@ -26,4 +26,4 @@ class NotUnderstood(BaseModel):
     reason: str  # UNKNOWN_PERFORMATIVE | SCHEMA_VIOLATION | MISSING_FIELD
     offending_field: str | None = None
     description: str = ""
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))

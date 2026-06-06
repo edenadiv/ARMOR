@@ -1,6 +1,6 @@
 """FIPA-ACL message envelope and schema validation (SDD §3.1.1, FR-32)."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -27,7 +27,7 @@ class ACLMessage(BaseModel):
     seq: int = 0
     # Set authoritatively by the bus on publish for total ordering.
     lamport_ts: int = 0
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 def parse_message(raw: str | bytes) -> ACLMessage:
