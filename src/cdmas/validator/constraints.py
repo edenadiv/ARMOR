@@ -10,6 +10,7 @@ from __future__ import annotations
 import operator
 from collections.abc import Callable
 from dataclasses import dataclass
+from itertools import pairwise
 from typing import Literal, Protocol
 
 from cdmas.common.logging.event_log import EventLog, EventType
@@ -147,7 +148,7 @@ def max_interval_lte(
             groups.setdefault(e.agent_id if per_agent else "*", []).append(e.wall_ms)
         worst = 0.0
         for ts in groups.values():
-            worst = max([worst, *[b - a for a, b in zip(ts, ts[1:])]])
+            worst = max([worst, *[b - a for a, b in pairwise(ts)]])
         return _res(
             fr, desc, "PASS" if worst <= bound else "FAIL", f"max gap={worst}ms", f"<={bound}ms"
         )

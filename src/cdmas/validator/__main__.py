@@ -14,8 +14,11 @@ def main() -> int:
         print(f"[{flag}] {o.name}  (SW={o.social_welfare:.3f})")
         for k, v in o.criteria.items():
             print(f"    {'PASS' if v else 'FAIL'}  {k}")
-    missing = {f"FR-{n:02d}" for n in range(1, 35)} - report.fr_pass - report.fr_fail
-    print(f"\nFR coverage: {len(report.fr_pass)} passed, {len(report.fr_fail)} failed")
+    na = {f"FR-{n:02d}" for n in range(1, 35)} - report.fr_pass - report.fr_fail
+    print(
+        f"\nFR coverage: {len(report.fr_pass)} passed, {len(report.fr_fail)} failed, "
+        f"{len(na)} not exercised"
+    )
     if report.fr_fail:
         print(f"  failing FRs: {sorted(report.fr_fail)}")
     print(f"\nOVERALL: {'PASS' if report.passed else 'FAIL'}")

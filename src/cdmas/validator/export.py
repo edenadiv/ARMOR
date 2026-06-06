@@ -68,11 +68,9 @@ async def build_export() -> dict[str, Any]:
     }
 
 
-async def write_export(path: Path) -> dict[str, Any]:
-    data = await build_export()
+def write_export(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2))
-    return data
 
 
 def main() -> None:
@@ -80,10 +78,10 @@ def main() -> None:
     import sys
 
     target = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("frontend/src/data/replay.json")
-    data = asyncio.run(write_export(target))
-    print(
-        f"Wrote {target} ({len(data['replay']['events'])} events, {len(data['validation'])} scenarios)"
-    )
+    data = asyncio.run(build_export())
+    write_export(target, data)
+    events = len(data["replay"]["events"])
+    print(f"Wrote {target} ({events} events, {len(data['validation'])} scenarios)")
 
 
 if __name__ == "__main__":
