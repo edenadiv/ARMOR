@@ -79,10 +79,10 @@ class InProcessSimulator:
     async def apply_action(self, req: ActionRequest) -> ActionResult:
         return self.state.apply_action(req)
 
-    def get_topology(self) -> TopologyView:
+    async def get_topology(self) -> TopologyView:
         return TopologyView(segments=list(self.segments), adjacency=self.topology.adjacency_view())
 
-    def get_state(self) -> StateSnapshot:
+    async def get_state(self) -> StateSnapshot:
         segs = [
             SegmentState(
                 segment=s,

@@ -25,7 +25,8 @@ async def test_ddos_then_throttle_reduces_volume():
     sim.tick()
     after = sum(p.freq for p in await sim.get_packets(Segment.PUBLIC_FACING, 10_000))
     assert after < before  # throttle reduced effective volume
-    assert sim.get_state().segments[0].health == "UNDER_ATTACK"
+    state = await sim.get_state()
+    assert state.segments[0].health == "UNDER_ATTACK"
 
 
 async def test_quarantine_isolates_segment_traffic():
@@ -38,9 +39,9 @@ async def test_quarantine_isolates_segment_traffic():
     assert all(not p.src_ip.startswith("203.0.") for p in pkts)
 
 
-def test_topology_and_ground_truth():
+async def test_topology_and_ground_truth():
     sim = _sim()
-    view = sim.get_topology()
+    view = await sim.get_topology()
     assert Segment.PUBLIC_FACING in view.segments
     sim.inject(AttackSpec(type=AttackType.DDOS, segment=Segment.PUBLIC_FACING))
     assert sim.ground_truth().is_attack(Segment.PUBLIC_FACING, 0.0) is True

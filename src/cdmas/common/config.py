@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     kafka_bootstrap: str = "localhost:9092"
     kafka_client_id: str = "cdmas"
     # Simulator
+    sim_host: str = "0.0.0.0"
+    sim_port: int = 8000
     sim_base_url: str = "http://localhost:8000"
     sim_api_token: str = "changeme"
     sim_speed: float = 1.0
