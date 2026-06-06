@@ -14,7 +14,7 @@ def test_accelerated_speed():
     sc = SimClock(base, speed=10.0, tick_ms=10)
     assert sc.sim_now_ms() == 0
     base.advance(10)
-    assert sc.sim_now_ms() == 100  # 10ms wall × 10 = 100ms sim
+    assert sc.sim_now_ms() == 100  # 10ms wall x10 = 100ms sim
 
 
 def test_slow_motion_speed():
