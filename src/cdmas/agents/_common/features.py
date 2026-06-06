@@ -88,13 +88,14 @@ def build_training_set(
         x.append(extract_features(base))
         y.append("NORMAL")
 
+        intensity = 1.2 + (i % 5) * 0.4  # span 1.2..2.8 so test intensities are in-cluster
         for offset, atk, label in (
             (1000, AttackType.DDOS, "DDOS"),
             (2000, AttackType.PORT_SCAN, "PORT_SCAN"),
             (3000, AttackType.LATERAL, "LATERAL"),
         ):
             inj = AttackInjector(seed=seed + offset + i, topology=topology)
-            inj.inject(AttackSpec(type=atk, segment=segment, intensity=1.5))
+            inj.inject(AttackSpec(type=atk, segment=segment, intensity=intensity))
             mal = inj.overlay(segment, now_ms=0.0)
             x.append(extract_features(base + mal))
             y.append(label)

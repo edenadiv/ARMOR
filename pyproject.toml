@@ -88,3 +88,9 @@ strict = true
 plugins = ["pydantic.mypy"]
 mypy_path = "src"
 packages = ["cdmas"]
+
+# scikit-learn ships only partial type information; treat it as untyped.
+[[tool.mypy.overrides]]
+module = ["sklearn.*"]
+ignore_missing_imports = true
+disallow_untyped_calls = false
