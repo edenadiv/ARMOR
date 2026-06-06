@@ -77,9 +77,11 @@ class HybridClassifier:
         nn_dist = float(self.nn.kneighbors(xs, n_neighbors=1)[0][0, 0])
         novelty = nn_dist
         is_outlier = nn_dist > self._novelty_threshold
+        # An *extreme* outlier (far beyond any known traffic) is a zero-day regardless of
+        # the RF guess; a merely strong known attack is not.
+        is_extreme = nn_dist > self._novelty_threshold * 5.0
 
-        # Novelty first: out-of-distribution traffic is a zero-day, whatever the RF guesses.
-        if is_outlier:
+        if is_extreme:
             return Verdict(
                 Classification.SUSPICIOUS,
                 AttackType.NOVEL,
@@ -100,6 +102,15 @@ class HybridClassifier:
                 Classification.SUSPICIOUS,
                 attack_type_for_label(label),
                 severity=0.4 + 0.3 * confidence,
+                confidence=confidence,
+                novelty=novelty,
+            )
+        if is_outlier:
+            # Predicted normal but anomalous -> treat as a novel suspicious pattern.
+            return Verdict(
+                Classification.SUSPICIOUS,
+                AttackType.NOVEL,
+                severity=0.5,
                 confidence=confidence,
                 novelty=novelty,
             )

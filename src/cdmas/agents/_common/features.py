@@ -88,7 +88,7 @@ def build_training_set(
         x.append(extract_features(base))
         y.append("NORMAL")
 
-        intensity = 1.2 + (i % 5) * 0.4  # span 1.2..2.8 so test intensities are in-cluster
+        intensity = 1.5 + (i % 6) * 0.5  # span 1.5..4.0 so strong floods stay in-cluster
         for offset, atk, label in (
             (1000, AttackType.DDOS, "DDOS"),
             (2000, AttackType.PORT_SCAN, "PORT_SCAN"),
