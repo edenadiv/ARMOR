@@ -1,0 +1,147 @@
+# =============================================================================
+# CDMAS full-system orchestration.
+#
+# Skeleton: infrastructure (Kafka, PostgreSQL) is fully defined. Application
+# services reference Dockerfiles under deploy/dockerfiles/ that are built as
+# each subsystem lands (see docs/superpowers/plans/). App services are grouped
+# under the `app` profile so `docker compose up` brings up only infra until the
+# code exists; use `docker compose --profile app up` for the full system.
+#
+# Network topology modeled: 4 segments (internal, server, public-facing,
+# sec-mon). One TMA + ACA + RCA per active segment; TIA and RAA are global.
+# =============================================================================
+
+x-python-env: &python-env
+  CDMAS_KAFKA_BOOTSTRAP: kafka:9092
+  CDMAS_SIM_BASE_URL: http://simulator:8000
+  CDMAS_DB_URL: postgresql+asyncpg://cdmas:cdmas@postgres:5432/cdmas
+  CDMAS_LOG_LEVEL: INFO
+  CDMAS_LOG_JSON: "true"
+
+services:
+  # --------------------------------------------------------------------- infra
+  kafka:
+    image: apache/kafka:3.7.0
+    container_name: cdmas-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: cdmas-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: cdmas
+      POSTGRES_PASSWORD: cdmas
+      POSTGRES_DB: cdmas
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cdmas"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ----------------------------------------------------------------- simulator
+  simulator:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: deploy/dockerfiles/simulator.Dockerfile
+    container_name: cdmas-simulator
+    ports:
+      - "8000:8000"
+    environment:
+      <<: *python-env
+    depends_on:
+      kafka: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+
+  # ------------------------------------------------------------ global agents
+  tia:
+    profiles: ["app"]
+    build: { context: ., dockerfile: deploy/dockerfiles/agent.Dockerfile }
+    command: cdmas-tia
+    environment:
+      <<: *python-env
+      CDMAS_AGENT_ID: "TIA:global"
+    depends_on:
+      kafka: { condition: service_healthy }
+
+  raa:
+    profiles: ["app"]
+    build: { context: ., dockerfile: deploy/dockerfiles/agent.Dockerfile }
+    command: cdmas-raa
+    environment:
+      <<: *python-env
+      CDMAS_AGENT_ID: "RAA:global"
+    depends_on:
+      kafka: { condition: service_healthy }
+
+  # -------------------------------------------- per-segment agents (seg1 shown)
+  # Replicate the tma/aca/rca trio per active segment (seg1..seg4).
+  tma-seg1:
+    profiles: ["app"]
+    build: { context: ., dockerfile: deploy/dockerfiles/agent.Dockerfile }
+    command: cdmas-tma
+    environment:
+      <<: *python-env
+      CDMAS_AGENT_ID: "TMA:seg1"
+      CDMAS_AGENT_SEGMENT: "public-facing"
+    depends_on:
+      kafka: { condition: service_healthy }
+      simulator: { condition: service_started }
+
+  aca-seg1:
+    profiles: ["app"]
+    build: { context: ., dockerfile: deploy/dockerfiles/agent.Dockerfile }
+    command: cdmas-aca
+    environment:
+      <<: *python-env
+      CDMAS_AGENT_ID: "ACA:seg1"
+      CDMAS_AGENT_SEGMENT: "public-facing"
+    depends_on:
+      kafka: { condition: service_healthy }
+
+  rca-seg1:
+    profiles: ["app"]
+    build: { context: ., dockerfile: deploy/dockerfiles/agent.Dockerfile }
+    command: cdmas-rca
+    environment:
+      <<: *python-env
+      CDMAS_AGENT_ID: "RCA:seg1"
+      CDMAS_AGENT_SEGMENT: "public-facing"
+    depends_on:
+      kafka: { condition: service_healthy }
+
+  # --------------------------------------------------------------- dashboard
+  frontend:
+    profiles: ["app"]
+    build:
+      context: ./frontend
+      dockerfile: ../deploy/dockerfiles/frontend.Dockerfile
+    container_name: cdmas-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      simulator: { condition: service_started }
+
+volumes:
+  pgdata:
