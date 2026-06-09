@@ -1,35 +1,47 @@
 .PHONY: install test test-cov lint format typecheck up down clean frontend-install frontend-dev
 
 VENV := .venv
-PY := $(VENV)/bin/python
-PIP := $(VENV)/bin/pip
+
+# On Windows, standard CPython venvs use Scripts/; on Unix they use bin/.
+# Use the Windows `py -3.11` launcher so we pick python.org CPython (which has
+# prebuilt numpy/scikit-learn wheels), not an MSYS2 Python.
+ifeq ($(OS),Windows_NT)
+	VENV_BIN := $(VENV)/Scripts
+	BOOTSTRAP_PY := py -3.11
+else
+	VENV_BIN := $(VENV)/bin
+	BOOTSTRAP_PY := python3.11
+endif
+
+PY := $(VENV_BIN)/python
+PIP := $(VENV_BIN)/pip
 
 install:
-	python3.11 -m venv $(VENV)
-	$(PIP) install --upgrade pip
-	$(PIP) install -e ".[dev]"
+	$(BOOTSTRAP_PY) -m venv $(VENV)
+	$(PY) -m pip install --upgrade pip
+	$(PY) -m pip install -e ".[dev]"
 
 test:
-	$(VENV)/bin/pytest
+	$(VENV_BIN)/pytest
 
 acceptance:
-	$(VENV)/bin/pytest tests/acceptance -v
+	$(VENV_BIN)/pytest tests/acceptance -v
 
 validate:
-	$(VENV)/bin/python -m cdmas.validator
+	$(PY) -m cdmas.validator
 
 test-cov:
-	$(VENV)/bin/pytest --cov=cdmas --cov-report=term-missing --cov-report=html
+	$(VENV_BIN)/pytest --cov=cdmas --cov-report=term-missing --cov-report=html
 
 lint:
-	$(VENV)/bin/ruff check src tests
+	$(VENV_BIN)/ruff check src tests
 
 format:
-	$(VENV)/bin/ruff format src tests
-	$(VENV)/bin/ruff check --fix src tests
+	$(VENV_BIN)/ruff format src tests
+	$(VENV_BIN)/ruff check --fix src tests
 
 typecheck:
-	$(VENV)/bin/mypy
+	$(PY) -m mypy
 
 up:
 	docker compose up --build

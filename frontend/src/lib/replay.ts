@@ -18,8 +18,8 @@ export interface AlertItem {
 }
 
 export interface FlowEdge {
-  from: string; // agent type
-  to: string; // agent type
+  from: string; // agent node
+  to: string; // agent node
   kind: string;
 }
 
@@ -45,12 +45,30 @@ function levelFor(severity: number, classification?: string): "critical" | "susp
   return "info";
 }
 
+function attackerNodeFor(e: CdmasEvent): string {
+  if (e.agent_type !== "ATK") return "ATK";
+  const suffix = e.agent_id.split(":")[1]?.toUpperCase();
+  if (!suffix) return "ATK";
+  if (suffix === "LATERAL") return "ATK-LAT";
+  return `ATK-${suffix}`;
+}
+
 function edgesFor(e: CdmasEvent): FlowEdge[] {
   const sig = e.payload?.signal;
   switch (e.event_type) {
     case "ALERT_PUBLISHED":
-      return [{ from: "TMA", to: "ACA", kind: "alert" }];
+      return [
+        { from: "NETWORK", to: "TMA", kind: "attack" },
+        { from: "TMA", to: "ACA", kind: "alert" },
+      ];
     case "THREAT_CLASSIFIED":
+      if (!e.payload?.reported || e.payload?.classification === "NORMAL") {
+        return [
+          { from: "CLIENTS", to: "NETWORK", kind: "normal" },
+          { from: "NETWORK", to: "TMA", kind: "normal" },
+          { from: "ACA", to: "NETWORK", kind: "allow" },
+        ];
+      }
       return [
         { from: "ACA", to: "RCA", kind: "report" },
         { from: "ACA", to: "TIA", kind: "report" },
@@ -62,6 +80,9 @@ function edgesFor(e: CdmasEvent): FlowEdge[] {
     case "AUCTION_COMPLETED":
       return [{ from: "RAA", to: "RCA", kind: "grant" }];
     case "ACTION_EXECUTED":
+      if (sig === "attack_action") {
+        return [{ from: attackerNodeFor(e), to: "NETWORK", kind: "attack" }];
+      }
       if (sig === "response") return [{ from: "RCA", to: "RAA", kind: "mitigate" }];
       if (sig === "correlation") return [{ from: "TIA", to: "RCA", kind: "correlate" }];
       return [];

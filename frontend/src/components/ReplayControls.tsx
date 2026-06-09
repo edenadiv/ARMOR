@@ -2,7 +2,7 @@ import type { CSSProperties } from "react";
 
 import { useReplay } from "../lib/replayContext";
 
-const SPEEDS = [1, 2, 4, 8];
+const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 
 export function ReplayControls() {
   const { t, setT, duration, playing, setPlaying, speed, setSpeed } = useReplay();
