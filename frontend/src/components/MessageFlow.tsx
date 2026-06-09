@@ -5,13 +5,13 @@ import { useReplay } from "../lib/replayContext";
 const NODES: Record<string, { x: number; y: number; color: string }> = {
   "ATK-DDOS": { x: 90, y: 90, color: "var(--red)" },
   "ATK-LAT": { x: 90, y: 250, color: "var(--red)" },
-  CLIENTS: { x: 90, y: 170, color: "var(--green)" },
+  CLIENTS: { x: 90, y: 170, color: "var(--cyan)" },
   NETWORK: { x: 280, y: 170, color: "var(--amber)" },
-  TMA: { x: 450, y: 60, color: "var(--cyan)" },
-  ACA: { x: 520, y: 130, color: "var(--green)" },
-  RCA: { x: 520, y: 210, color: "var(--amber)" },
+  TMA: { x: 450, y: 60, color: "var(--primary)" },
+  ACA: { x: 520, y: 130, color: "var(--primary)" },
+  RCA: { x: 520, y: 210, color: "var(--primary)" },
   TIA: { x: 450, y: 280, color: "var(--violet)" },
-  RAA: { x: 390, y: 340, color: "var(--cyan)" },
+  RAA: { x: 390, y: 340, color: "var(--primary)" },
 };
 
 const NODE_LABELS: Record<string, string> = {
@@ -23,7 +23,7 @@ const NODE_LABELS: Record<string, string> = {
 
 const KIND_COLOR: Record<string, string> = {
   attack: "var(--red)",
-  normal: "var(--green)",
+  normal: "var(--cyan)",
   allow: "var(--green)",
   alert: "var(--cyan)",
   report: "var(--green)",
@@ -33,6 +33,14 @@ const KIND_COLOR: Record<string, string> = {
   grant: "var(--cyan)",
   mitigate: "var(--green)",
 };
+
+const LEGEND_ITEMS: Array<{ label: string; color: string }> = [
+  { label: "Attackers (ATK)", color: "var(--red)" },
+  { label: "Legit Clients", color: "var(--cyan)" },
+  { label: "Network Core", color: "var(--amber)" },
+  { label: "Defense Agents (TMA/ACA/RCA/RAA)", color: "var(--primary)" },
+  { label: "Intelligence Agent (TIA)", color: "var(--violet)" },
+];
 
 export function MessageFlow() {
   const { data, derived, t } = useReplay();
@@ -170,7 +178,7 @@ export function MessageFlow() {
                 cx={n.x}
                 cy={n.y}
                 r={active ? 30 : 26}
-                fill="rgba(7,12,20,0.9)"
+                fill="var(--panel-solid)"
                 stroke={n.color}
                 strokeWidth={active ? 2.4 : 1.4}
                 style={{ filter: active ? `drop-shadow(0 0 10px ${n.color})` : "none" }}
@@ -192,6 +200,14 @@ export function MessageFlow() {
           );
         })}
       </svg>
+      <div className="flow-legend">
+        {LEGEND_ITEMS.map((item) => (
+          <div key={item.label} className="flow-legend-item">
+            <span className="flow-legend-dot" style={{ background: item.color }} />
+            <span>{item.label}</span>
+          </div>
+        ))}
+      </div>
       <div
         style={{
           borderTop: "1px solid var(--line)",
@@ -215,7 +231,7 @@ export function MessageFlow() {
               fontSize: 11,
               borderLeft: `2px solid ${KIND_COLOR[item.level] ?? "var(--cyan)"}`,
               padding: "3px 8px",
-              background: "rgba(7, 12, 20, 0.4)",
+              background: "var(--panel-solid)",
             }}
           >
             <span style={{ color: "var(--faint)", minWidth: 46, fontFamily: "var(--font-mono)" }}>

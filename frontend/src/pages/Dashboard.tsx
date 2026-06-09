@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
 
 import { AlertFeed } from "../components/AlertFeed";
 import { MessageFlow } from "../components/MessageFlow";
@@ -81,7 +81,7 @@ export function Dashboard() {
     };
   }, [dragging]);
 
-  const beginDrag = (divider: Divider, event: MouseEvent<HTMLDivElement>) => {
+  const beginDrag = (divider: Divider, event: ReactMouseEvent<HTMLDivElement>) => {
     event.preventDefault();
     const gridRect = gridRef.current?.getBoundingClientRect();
     if (!gridRect || gridRect.width <= 0) {
@@ -118,7 +118,6 @@ export function Dashboard() {
       />
       <div className="center">
         <MessageFlow />
-        <MetricsPanel />
       </div>
       <div
         className="resize-handle right"
@@ -129,6 +128,7 @@ export function Dashboard() {
       />
       <div className="right">
         <AlertFeed />
+        <MetricsPanel />
         <ResourcePanel />
       </div>
     </div>

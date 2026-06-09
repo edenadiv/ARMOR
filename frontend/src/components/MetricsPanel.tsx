@@ -41,7 +41,7 @@ export function MetricsPanel() {
   ];
 
   const counts = [
-    { name: "ALERTS", v: derived.counts.alerts, c: "var(--cyan)" },
+    { name: "ALERTS", v: derived.counts.alerts, c: "var(--red)" },
     { name: "CLASSIFIED", v: derived.counts.classified, c: "var(--green)" },
     { name: "RESPONSES", v: derived.counts.responses, c: "var(--amber)" },
     { name: "VOTES", v: derived.counts.votes, c: "var(--violet)" },
@@ -51,33 +51,35 @@ export function MetricsPanel() {
     <div className="panel">
       <div className="panel-title">
         <span className="tick" style={{ background: "var(--green)", boxShadow: "var(--glow-green)" }} />
-        <h3>Live Performance Metrics vs SRS Targets</h3>
+        <h3>Live Performance Metrics</h3>
       </div>
-      <div className="metric-grid">
-        {tiles.map((t) => (
-          <div className="metric" key={t.label}>
-            <div className="label">{t.label}</div>
-            <div className={`value ${t.cls}`}>{t.value}</div>
-            <div className="target">{t.target}</div>
-          </div>
-        ))}
-      </div>
-      <div style={{ height: 92, marginTop: 12 }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={counts} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
-            <XAxis
-              dataKey="name"
-              tick={{ fontFamily: "var(--font-mono)", fontSize: 9, fill: "#6c7f97" }}
-              axisLine={false}
-              tickLine={false}
-            />
-            <Bar dataKey="v" radius={[3, 3, 0, 0]} label={{ position: "top", fill: "#cddcee", fontSize: 11 }}>
-              {counts.map((c) => (
-                <Cell key={c.name} fill={c.c} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+      <div className="metrics-stack">
+        <div className="metric-grid">
+          {tiles.map((t) => (
+            <div className="metric" key={t.label}>
+              <div className="label">{t.label}</div>
+              <div className={`value ${t.cls}`}>{t.value}</div>
+              <div className="target">{t.target}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ height: 92 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={counts} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
+              <XAxis
+                dataKey="name"
+                tick={{ fontFamily: "var(--font-mono)", fontSize: 9, fill: "#6c7f97" }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <Bar dataKey="v" radius={[3, 3, 0, 0]} label={{ position: "top", fill: "#cddcee", fontSize: 11 }}>
+                {counts.map((c) => (
+                  <Cell key={c.name} fill={c.c} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       </div>
     </div>
   );
