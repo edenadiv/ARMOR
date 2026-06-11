@@ -51,7 +51,7 @@ export function Tutorial({ onClose, onPlayFromStart, onSeek }: Props) {
     {
       eyebrow: "06 / 06 · Proof",
       title: "Provably within spec",
-      body: "The bottom panels show live metrics against the SRS targets, and the host overhead stays under its 40% cap. Open the Validator tab to see all six stress-test scenarios pass with Social Welfare ≥ 0.80.",
+      body: "The bottom panels show live metrics against the performance targets, and the host overhead stays under its 40% cap. Open the Validator tab to see all six stress-test scenarios pass with Social Welfare ≥ 0.80.",
       enter: () => onSeek(duration),
     },
   ];
