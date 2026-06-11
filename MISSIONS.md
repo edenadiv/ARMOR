@@ -40,11 +40,11 @@ data clearer, more honest, and more user friendly.
 This track is about navigation and presentation: how the user drives scenarios,
 reads the network layout, and a polish pass on stray wording.
 
-- [ ] **M2 — Scenario buttons.** Instead of a single play button, add a button
+- [x] **M2 — Scenario buttons.** Instead of a single play button, add a button
   for each scenario.
-- [ ] **M7 — Clearer network topology.** Expand the network topology view so its
+- [x] **M7 — Clearer network topology.** Expand the network topology view so its
   meaning is obvious at a glance.
-- [ ] **M9 — Remove "SRS" references.** Remove the "SRS" wording/references from
+- [x] **M9 — Remove "SRS" references.** Remove the "SRS" wording/references from
   the frontend.
 
 ---
@@ -53,4 +53,4 @@ reads the network layout, and a polish pass on stray wording.
 
 - [ ] Track A complete (Ran)
 - [ ] Track B complete (Adi)
-- [ ] Track C complete (Eden)
+- [x] Track C complete (Eden)
