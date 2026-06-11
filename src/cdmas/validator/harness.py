@@ -33,6 +33,7 @@ class ScenarioResult:
     events: list[EventLog]
     metrics: MetricsSnapshot
     constraints: list[ConstraintResult]
+    segments: list[Segment]
 
     @property
     def failed(self) -> list[ConstraintResult]:
@@ -112,7 +113,7 @@ class ScenarioHarness:
             total_time_ms=total_time_ms,
         )
         constraints = check_all(CheckContext(events=self.sink.events, metrics=metrics))
-        return ScenarioResult(self.sink.events, metrics, constraints)
+        return ScenarioResult(self.sink.events, metrics, constraints, list(self.sim.segments))
 
 
 def all_agents(harness: ScenarioHarness) -> list[BaseAgent]:

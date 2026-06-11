@@ -1,7 +1,8 @@
-"""Export a recorded scenario run + validation summary as JSON for the dashboard.
+"""Export all six recorded scenario runs + validation summary as JSON for the dashboard.
 
 Produces a self-contained file the React frontend loads (so the dashboard works offline,
-and can still connect to a live simulator WebSocket when one is available).
+and can still connect to a live simulator WebSocket when one is available). Each scenario
+carries its own recording and topology (scenarios activate different segment sets).
 """
 
 from __future__ import annotations
@@ -10,14 +11,12 @@ import json
 from pathlib import Path
 from typing import Any
 
-from cdmas.common.models.enums import Segment
 from cdmas.simulator.topology import NetworkTopology
 from cdmas.validator.scenarios import SCENARIOS
 
 
 async def build_export() -> dict[str, Any]:
-    topology = NetworkTopology(list(Segment))
-    replay: dict[str, Any] | None = None
+    replays: list[dict[str, Any]] = []
     validation: list[dict[str, Any]] = []
 
     for name, run_fn, criteria_fn in SCENARIOS:
@@ -40,32 +39,21 @@ async def build_export() -> dict[str, Any]:
                 ],
             }
         )
-        # Use the richest run (multi-segment) for the animated dashboard replay.
-        if replay is None and "Multi-Segment" in name:
-            replay = {
+        topology = NetworkTopology(result.segments)
+        replays.append(
+            {
                 "scenario": name,
                 "duration_ms": max((e.wall_ms for e in result.events), default=0.0),
+                "topology": {
+                    "segments": [s.value for s in topology.segments],
+                    "adjacency": topology.adjacency_view(),
+                },
                 "events": [e.model_dump(mode="json") for e in result.events],
                 "metrics": result.metrics.model_dump(mode="json"),
             }
+        )
 
-    if replay is None:  # fallback to the first scenario
-        first = await SCENARIOS[0][1]()
-        replay = {
-            "scenario": SCENARIOS[0][0],
-            "duration_ms": max((e.wall_ms for e in first.events), default=0.0),
-            "events": [e.model_dump(mode="json") for e in first.events],
-            "metrics": first.metrics.model_dump(mode="json"),
-        }
-
-    return {
-        "topology": {
-            "segments": [s.value for s in topology.segments],
-            "adjacency": topology.adjacency_view(),
-        },
-        "replay": replay,
-        "validation": validation,
-    }
+    return {"replays": replays, "validation": validation}
 
 
 def write_export(path: Path, data: dict[str, Any]) -> None:
@@ -80,8 +68,11 @@ def main() -> None:
     target = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("frontend/src/data/replay.json")
     data = asyncio.run(build_export())
     write_export(target, data)
-    events = len(data["replay"]["events"])
-    print(f"Wrote {target} ({events} events, {len(data['validation'])} scenarios)")
+    events = sum(len(r["events"]) for r in data["replays"])
+    print(
+        f"Wrote {target} ({len(data['replays'])} replays, {events} events, "
+        f"{len(data['validation'])} scenarios)"
+    )
 
 
 if __name__ == "__main__":
