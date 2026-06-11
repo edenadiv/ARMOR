@@ -26,8 +26,8 @@ export function Tutorial({ onClose, onPlayFromStart, onSeek }: Props) {
     },
     {
       eyebrow: "02 / 06 · Topology",
-      title: "Four network segments",
-      body: "On the left, each zone (Internal, Server, Public-Facing, Security Monitoring) is watched by its own Traffic Monitor, Anomaly Classifier, and Response Coordinator. Green is nominal; the border flares red under attack.",
+      title: "The network map",
+      body: "On the left, every zone active in this scenario is drawn as a node — dashed links are the lateral-movement routes between adjacent zones. Each zone is watched by its own Traffic Monitor (T), Anomaly Classifier (A), and Response Coordinator (R). Green is nominal; a node flares red under attack.",
       enter: () => onSeek(0),
     },
     {

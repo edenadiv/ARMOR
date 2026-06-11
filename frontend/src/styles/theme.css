@@ -501,6 +501,33 @@ h3 {
   box-shadow: var(--glow-green);
 }
 
+/* ---- topology map ---- */
+.topo-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.topo-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.topo-foot .agent-chips {
+  margin-top: 0;
+}
+.topo-foot-label {
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: var(--dim);
+}
+
 /* ---- metric tiles ---- */
 .metrics-stack {
   display: flex;
