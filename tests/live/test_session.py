@@ -1,0 +1,71 @@
+"""LiveSession — runs the real fleet in-process and streams it to the EventHub."""
+
+from cdmas.common.models.enums import Segment
+from cdmas.common.timing.clock import ManualClock
+from cdmas.live.hub import StreamFrame
+from cdmas.live.session import LiveSession
+
+
+def _drain(q) -> list[StreamFrame]:
+    out = []
+    while not q.empty():
+        out.append(q.get_nowait())
+    return out
+
+
+def _session() -> LiveSession:
+    return LiveSession(segments=[Segment.PUBLIC_FACING], clock=ManualClock())
+
+
+async def test_send_dos_injects_attack_and_emits_sim_event():
+    s = _session()
+    q = s.hub.subscribe()
+    s.send_dos("public-facing", intensity=3.0)
+    assert s.sim.ground_truth().is_attack(Segment.PUBLIC_FACING, s.clock.now_ms()) is True
+    sim_events = [f for f in _drain(q) if f.kind == "sim_event"]
+    assert any(f.payload.get("signal") == "manual_dos" for f in sim_events)
+
+
+async def test_send_legal_does_not_inject_an_attack():
+    s = _session()
+    q = s.hub.subscribe()
+    s.send_legal("public-facing")
+    assert s.sim.ground_truth().is_attack(Segment.PUBLIC_FACING, s.clock.now_ms()) is False
+    sim_events = [f for f in _drain(q) if f.kind == "sim_event"]
+    assert any(f.payload.get("signal") == "manual_legal" for f in sim_events)
+
+
+async def test_live_fleet_detects_injected_dos():
+    s = _session()
+    q = s.hub.subscribe()
+    for _ in range(30):  # warm up the traffic baseline
+        await s.tick_round()
+        s.clock.advance(s.step_ms)
+    s.send_dos("public-facing", intensity=4.0)
+    for _ in range(15):
+        await s.tick_round()
+        s.clock.advance(s.step_ms)
+    agent_events = [f for f in _drain(q) if f.kind == "agent_event"]
+    types = {f.payload["event_type"] for f in agent_events}
+    assert "ALERT_PUBLISHED" in types  # the real TMA detected the live attack
+
+
+async def test_status_frames_report_topology_and_stream():
+    s = _session()
+    q = s.hub.subscribe()
+    await s.tick_round()
+    frames = _drain(q)
+    status = [f for f in frames if f.kind == "connection_status"]
+    state = [f for f in frames if f.kind == "simulation_state"]
+    assert status and state
+    assert status[-1].payload["stream_connected"] is True
+    assert status[-1].payload["agents_total"] >= 1
+    assert state[-1].payload["mode"] == "auto"
+
+
+async def test_step_mode_gate_can_be_released():
+    s = _session()
+    s.set_mode("step")
+    assert s.mode == "step"
+    s.request_next()  # arms the gate
+    assert s._next.is_set()
