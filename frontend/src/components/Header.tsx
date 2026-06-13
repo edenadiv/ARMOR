@@ -3,7 +3,7 @@ import { Link, NavLink } from "react-router-dom";
 import { shortScenarioName } from "../lib/replay";
 import { useReplay } from "../lib/replayContext";
 
-export function Header({ onTutorial }: { onTutorial: () => void }) {
+export function Header({ onStepThrough }: { onStepThrough: () => void }) {
   const { playing, scenarios, scenario } = useReplay();
 
   return (
@@ -39,8 +39,8 @@ export function Header({ onTutorial }: { onTutorial: () => void }) {
         </nav>
       </div>
       <div className="right-actions">
-        <button className="btn primary header-tour" onClick={onTutorial}>
-          ▶ Guided Tour
+        <button className="btn primary header-tour" onClick={onStepThrough}>
+          ▶ Step by Step
         </button>
         <span className={`live-pill header-status ${playing ? "is-playing" : "is-paused"}`}>
           <span className="live-dot" /> {playing ? "SIMULATION ACTIVE" : "SIMULATION PAUSED"} ·{" "}
