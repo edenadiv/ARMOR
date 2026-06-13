@@ -120,12 +120,11 @@ export default function App() {
 
   const start = useCallback(() => {
     clearDwell();
-    setScenario(DEFAULT_SCENARIO);
     setDirectorMode("manual");
     setDirectorIndex(0);
     setDirectorActive(true);
     setPlaying(false);
-    setT(0); // the intro beat always sits at t=0
+    setT(0); // intro beat sits at t=0; narrates whichever scenario is selected
     advancedRef.current = false;
   }, []);
 
@@ -215,7 +214,15 @@ export default function App() {
   const selectScenario = (i: number) => {
     setScenario(i);
     setT(0);
-    setPlaying(true);
+    if (activeRef.current) {
+      // While stepping: re-narrate the newly chosen scenario from its first beat.
+      setDirectorIndex(0);
+      setDirectorMode("manual");
+      setPlaying(false);
+      advancedRef.current = false;
+    } else {
+      setPlaying(true);
+    }
   };
 
   return (
@@ -249,7 +256,7 @@ export default function App() {
     >
       <div className="app">
         <Backdrop />
-        <Header onTutorial={start} />
+        <Header onStepThrough={start} />
         <div className="content">
           <Routes>
             <Route path="/" element={<Dashboard />} />

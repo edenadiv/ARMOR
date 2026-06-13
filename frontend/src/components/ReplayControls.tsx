@@ -17,10 +17,15 @@ export function ReplayControls() {
     setPlaying,
     speed,
     setSpeed,
+    director,
   } = useReplay();
   const pct = Math.min(100, (t / duration) * 100);
 
   const onScenario = (i: number) => {
+    if (director.active) {
+      selectScenario(i); // (re)start step-by-step narration for the chosen scenario
+      return;
+    }
     if (i === scenario) {
       if (t >= duration) setT(0);
       setPlaying(!playing);

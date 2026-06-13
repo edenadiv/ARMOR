@@ -1046,7 +1046,7 @@ h3 {
 .director-card {
   position: absolute;
   left: 50%;
-  bottom: 92px;
+  bottom: 130px;
   transform: translateX(-50%);
   width: min(760px, 92vw);
   display: flex;
@@ -1139,7 +1139,7 @@ h3 {
 .director-hint {
   position: absolute;
   left: 50%;
-  bottom: 70px;
+  top: 108px;
   transform: translateX(-50%);
   font-family: var(--font-mono);
   font-size: 10px;
