@@ -81,13 +81,19 @@ deploy/dockerfiles/  docker-compose.yml  .github/workflows/ci.yml
 ```bash
 # Backend (Python)
 make install        # venv + package with dev extras
-make test           # unit suite (128 tests)
+make test           # unit + live suite
 make validate       # run the six SRS scenarios and print the report
 make lint typecheck # ruff + mypy --strict
 
-# Dashboard (beautiful UI + guided tutorial)
+# Dashboard (war-room UI)
 cd frontend && npm install && npm run dev   # http://localhost:5173
-#   then click "▶ Guided Tour" for the dynamic walkthrough
+#   Replay mode: click "▶ Step by Step" to narrate any of the six scenarios.
+#   Live mode:   start the live server below, toggle "Live" (top-right), then use
+#                Send Legal / Send DoS and Auto-run / Step.
+
+# Live single-process MAS server (the real fleet, streamed over WebSocket)
+python -m cdmas.live                     # http://localhost:8000  (ws/events)
+#   containerized:  docker compose --profile live up live
 
 # Full containerized system
 docker compose up                       # infra (Kafka + PostgreSQL)
@@ -96,7 +102,10 @@ docker compose --profile app up --build # + simulator, 4 agent trios, TIA/RAA, d
 
 The dashboard ships with a recorded multi-segment incident
 (`frontend/src/data/replay.json`, regenerate with `python -m cdmas.validator.export`),
-so it runs standalone; it can also stream from a live simulator's WebSocket.
+so **Replay** mode runs standalone. **Live** mode instead streams the *real* fleet from the
+live server's WebSocket (config via `CDMAS_LIVE_*`; token `CDMAS_SIM_API_TOKEN`) — inject
+traffic with Send Legal / Send DoS and watch detection → classification → response unfold
+in real time, with Auto-run or Step pacing.
 
 ## Dashboard
 
