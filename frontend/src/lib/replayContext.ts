@@ -1,10 +1,23 @@
 import { createContext, useContext } from "react";
 
 import type { Beat } from "./director";
+import type { ConnStatus, SimMode } from "./liveStore";
 import type { DerivedState } from "./replay";
 import type { ExportData } from "./types";
 
 export type DirectorMode = "manual" | "auto";
+export type ViewMode = "replay" | "live";
+
+export interface LiveControls {
+  connected: boolean;
+  conn: ConnStatus;
+  sim: SimMode;
+  segments: string[];
+  sendDos: (segment: string) => void;
+  sendLegal: (segment: string) => void;
+  setRunMode: (m: "auto" | "step") => void;
+  next: () => void;
+}
 
 export interface DirectorState {
   active: boolean;
@@ -33,6 +46,9 @@ export interface ReplayCtx {
   setSpeed: (n: number) => void;
   derived: DerivedState;
   director: DirectorState;
+  viewMode: ViewMode;
+  setViewMode: (m: ViewMode) => void;
+  live: LiveControls;
 }
 
 export const ReplayContext = createContext<ReplayCtx | null>(null);

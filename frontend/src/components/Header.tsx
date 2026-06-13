@@ -4,7 +4,8 @@ import { shortScenarioName } from "../lib/replay";
 import { useReplay } from "../lib/replayContext";
 
 export function Header({ onStepThrough }: { onStepThrough: () => void }) {
-  const { playing, scenarios, scenario } = useReplay();
+  const { playing, scenarios, scenario, viewMode, setViewMode, live } = useReplay();
+  const isLive = viewMode === "live";
 
   return (
     <header className="topbar">
@@ -39,13 +40,37 @@ export function Header({ onStepThrough }: { onStepThrough: () => void }) {
         </nav>
       </div>
       <div className="right-actions">
-        <button className="btn primary header-tour" onClick={onStepThrough}>
-          ▶ Step by Step
-        </button>
-        <span className={`live-pill header-status ${playing ? "is-playing" : "is-paused"}`}>
-          <span className="live-dot" /> {playing ? "SIMULATION ACTIVE" : "SIMULATION PAUSED"} ·{" "}
-          {shortScenarioName(scenarios[scenario]).toUpperCase()}
-        </span>
+        <div className="mode-toggle" role="group" aria-label="View mode">
+          <button className={!isLive ? "on" : ""} onClick={() => setViewMode("replay")}>
+            Replay
+          </button>
+          <button className={isLive ? "on" : ""} onClick={() => setViewMode("live")}>
+            Live
+          </button>
+        </div>
+        {isLive ? (
+          <div className="conn-badges">
+            <span className={`conn-badge ${live.connected ? "ok" : "bad"}`}>
+              <span className="conn-dot" /> Stream
+            </span>
+            <span className={`conn-badge ${live.conn.agents_connected > 0 ? "ok" : "bad"}`}>
+              <span className="conn-dot" /> Agents {live.conn.agents_connected}/{live.conn.agents_total}
+            </span>
+            <span className={`conn-badge ${live.conn.bus_connected ? "ok" : "bad"}`}>
+              <span className="conn-dot" /> Bus
+            </span>
+          </div>
+        ) : (
+          <>
+            <button className="btn primary header-tour" onClick={onStepThrough}>
+              ▶ Step by Step
+            </button>
+            <span className={`live-pill header-status ${playing ? "is-playing" : "is-paused"}`}>
+              <span className="live-dot" /> {playing ? "SIMULATION ACTIVE" : "SIMULATION PAUSED"} ·{" "}
+              {shortScenarioName(scenarios[scenario]).toUpperCase()}
+            </span>
+          </>
+        )}
       </div>
     </header>
   );

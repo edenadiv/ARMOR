@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { type CSSProperties, useState } from "react";
 
 import { shortScenarioName } from "../lib/replay";
 import { useReplay } from "../lib/replayContext";
@@ -18,7 +18,11 @@ export function ReplayControls() {
     speed,
     setSpeed,
     director,
+    viewMode,
   } = useReplay();
+
+  if (viewMode === "live") return <LiveControls />;
+
   const pct = Math.min(100, (t / duration) * 100);
 
   const onScenario = (i: number) => {
@@ -51,7 +55,13 @@ export function ReplayControls() {
         ))}
       </div>
       <div className="replay">
-        <button className="btn" onClick={() => { setPlaying(false); setT(0); }}>
+        <button
+          className="btn"
+          onClick={() => {
+            setPlaying(false);
+            setT(0);
+          }}
+        >
           ⏮ Restart
         </button>
         <span className="clock mono">
@@ -71,15 +81,76 @@ export function ReplayControls() {
         />
         <div className="speeds">
           {SPEEDS.map((s) => (
-            <button
-              key={s}
-              className={s === speed ? "active" : ""}
-              onClick={() => setSpeed(s)}
-            >
+            <button key={s} className={s === speed ? "active" : ""} onClick={() => setSpeed(s)}>
               {s}x
             </button>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function LiveControls() {
+  const { live } = useReplay();
+  const segments = live.segments.length ? live.segments : ["public-facing"];
+  const [seg, setSeg] = useState(segments[0]);
+  const target = segments.includes(seg) ? seg : segments[0];
+  const stepMode = live.sim.mode === "step";
+
+  return (
+    <div style={{ padding: "0 22px 18px" }}>
+      <div className="live-bar">
+        <span className="live-bar-label">LIVE SIMULATION</span>
+        <select
+          className="seg-select"
+          value={target}
+          onChange={(e) => setSeg(e.target.value)}
+          aria-label="Target segment"
+        >
+          {segments.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+        <button className="btn" onClick={() => live.sendLegal(target)} disabled={!live.connected}>
+          ✅ Send Legal
+        </button>
+        <button
+          className="btn danger"
+          onClick={() => live.sendDos(target)}
+          disabled={!live.connected}
+        >
+          ⚡ Send DoS
+        </button>
+        <span className="live-sep" />
+        <button
+          className={`btn${!stepMode ? " primary" : ""}`}
+          onClick={() => live.setRunMode("auto")}
+          disabled={!live.connected}
+        >
+          ▶ Auto-run
+        </button>
+        <button
+          className={`btn${stepMode ? " primary" : ""}`}
+          onClick={() => live.setRunMode("step")}
+          disabled={!live.connected}
+        >
+          ❚❚ Step
+        </button>
+        <button
+          className="btn"
+          onClick={() => live.next()}
+          disabled={!live.connected || !live.sim.awaiting_next}
+        >
+          Next ▶
+        </button>
+        <span className="live-status mono">
+          {live.connected
+            ? `round ${live.sim.round} · ${live.sim.mode}${live.sim.awaiting_next ? " · awaiting next" : ""}`
+            : "connecting…"}
+        </span>
       </div>
     </div>
   );

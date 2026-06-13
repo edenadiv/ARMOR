@@ -74,6 +74,25 @@ services:
       kafka: { condition: service_healthy }
       postgres: { condition: service_healthy }
 
+  # ----------------------------------------------------------------- live demo
+  # Single-process MAS demo: engine + the full fleet + the EventHub in one process,
+  # streamed to the dashboard over WebSocket. Self-contained — no Kafka/agents needed.
+  # Run just this with: `docker compose --profile live up live`. The dashboard's Live
+  # mode connects to ws://localhost:8000/ws/events?token=$CDMAS_SIM_API_TOKEN.
+  live:
+    profiles: ["live"]
+    build:
+      context: .
+      dockerfile: deploy/dockerfiles/simulator.Dockerfile
+    container_name: cdmas-live
+    command: ["python", "-m", "cdmas.live"]
+    ports:
+      - "8000:8000"
+    environment:
+      CDMAS_SIM_HOST: "0.0.0.0"
+      CDMAS_LIVE_CORS_ORIGINS: "*"
+      CDMAS_LOG_LEVEL: INFO
+
   # ------------------------------------------------------------ global agents
   tia:
     profiles: ["app"]

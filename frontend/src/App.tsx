@@ -7,10 +7,12 @@ import { Header } from "./components/Header";
 import { ReplayControls } from "./components/ReplayControls";
 import rawData from "./data/replay.json";
 import { type BeatKind, deriveBeats } from "./lib/director";
+import { liveDerived, liveMetrics } from "./lib/liveStore";
 import { deriveState } from "./lib/replay";
 import { ReplayContext } from "./lib/replayContext";
-import type { DirectorMode } from "./lib/replayContext";
+import type { DirectorMode, ViewMode } from "./lib/replayContext";
 import type { ExportBundle, ExportData } from "./lib/types";
+import { useLiveConnection } from "./lib/useLiveConnection";
 import { Dashboard } from "./pages/Dashboard";
 import { Inspector } from "./pages/Inspector";
 import { Validator } from "./pages/Validator";
@@ -37,6 +39,9 @@ export default function App() {
   const [t, setT] = useState(() => Math.max(bundle.replays[DEFAULT_SCENARIO].duration_ms, 1));
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(2);
+  const [viewMode, setViewMode] = useState<ViewMode>("replay");
+  const liveEnabled = viewMode === "live";
+  const liveConn = useLiveConnection(liveEnabled);
   const last = useRef<number | null>(null);
 
   const [directorActive, setDirectorActive] = useState(false);
@@ -202,14 +207,45 @@ export default function App() {
 
   useEffect(() => () => clearDwell(), []);
 
-  const data: ExportData = useMemo(
+  const replayData: ExportData = useMemo(
     () => ({ topology: replay.topology, replay, validation: bundle.validation }),
     [replay],
   );
-  const derived = useMemo(
+  const replayDerived = useMemo(
     () => deriveState(replay.events, t, replay.topology.segments),
     [replay, t],
   );
+
+  // Live mode: build the same ExportData/DerivedState shape from the live store.
+  const liveState = liveConn.state;
+  const liveT = Math.max(liveState.lastTs, 1);
+  const liveData: ExportData = useMemo(
+    () => ({
+      topology: liveState.topology,
+      replay: {
+        scenario: "LIVE",
+        duration_ms: liveT,
+        topology: liveState.topology,
+        events: liveState.events,
+        metrics: liveMetrics(liveState),
+        packets: [],
+      },
+      validation: bundle.validation,
+    }),
+    [liveState, liveT],
+  );
+  const liveDerivedState = useMemo(() => liveDerived(liveState), [liveState]);
+
+  // Narration is replay-only — leave the director when entering live mode.
+  useEffect(() => {
+    if (liveEnabled) stop();
+  }, [liveEnabled, stop]);
+
+  const data = liveEnabled ? liveData : replayData;
+  const derived = liveEnabled ? liveDerivedState : replayDerived;
+  const ctxT = liveEnabled ? liveT : t;
+  const ctxDuration = liveEnabled ? liveT : duration;
+  const ctxPlaying = liveEnabled ? !liveState.sim.paused : playing;
 
   const selectScenario = (i: number) => {
     setScenario(i);
@@ -232,10 +268,10 @@ export default function App() {
         scenarios,
         scenario,
         selectScenario,
-        duration,
-        t,
+        duration: ctxDuration,
+        t: ctxT,
         setT,
-        playing,
+        playing: ctxPlaying,
         setPlaying,
         speed,
         setSpeed,
@@ -251,6 +287,18 @@ export default function App() {
           prev,
           goto,
           setMode,
+        },
+        viewMode,
+        setViewMode,
+        live: {
+          connected: liveConn.connected,
+          conn: liveState.conn,
+          sim: liveState.sim,
+          segments: liveState.topology.segments,
+          sendDos: liveConn.sendDos,
+          sendLegal: liveConn.sendLegal,
+          setRunMode: liveConn.setRunMode,
+          next: liveConn.next,
         },
       }}
     >
