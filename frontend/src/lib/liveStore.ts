@@ -77,6 +77,22 @@ export function liveReduce(state: LiveState, frame: StreamFrame): LiveState {
           decision_trace: null,
         });
       }
+      // A manual legal pulse shows the green "verified normal traffic" flow.
+      if (frame.payload.signal === "manual_legal") {
+        return append(state, {
+          event_id: `sim-${frame.server_seq}`,
+          lamport_ts: 0,
+          wall_ms: frame.ts_ms,
+          event_type: "THREAT_CLASSIFIED",
+          timestamp: "",
+          agent_id: "ACA:legal",
+          agent_type: "ACA",
+          segment: frame.payload.segment ?? null,
+          payload: { reported: false, classification: "NORMAL", attack_type: "NORMAL", severity: 0 },
+          latency_ms: null,
+          decision_trace: null,
+        });
+      }
       return state;
     case "connection_status":
       return { ...state, conn: { ...state.conn, ...frame.payload } };

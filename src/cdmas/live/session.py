@@ -79,11 +79,17 @@ class LiveSession:
         self._next.set()
 
     # --- manual actions ----------------------------------------------------
-    def send_dos(self, segment: str, intensity: float = 3.0) -> None:
+    def send_dos(self, segment: str, intensity: float = 3.0, duration_ms: int = 3000) -> None:
+        # Bounded burst: the attack subsides after duration_ms so the segment recovers
+        # (an unbounded attack would flood the segment forever).
         now = self.clock.now_ms()
         self.sim.inject(
             AttackSpec(
-                type=AttackType.DDOS, segment=Segment(segment), intensity=intensity, start_ms=now
+                type=AttackType.DDOS,
+                segment=Segment(segment),
+                intensity=intensity,
+                start_ms=now,
+                duration_ms=duration_ms,
             )
         )
         self.hub.publish(
@@ -93,6 +99,7 @@ class LiveSession:
                 "segment": segment,
                 "attack_type": "DDOS",
                 "intensity": intensity,
+                "duration_ms": duration_ms,
             },
             ts_ms=now,
         )

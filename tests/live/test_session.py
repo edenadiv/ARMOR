@@ -28,6 +28,15 @@ async def test_send_dos_injects_attack_and_emits_sim_event():
     assert any(f.payload.get("signal") == "manual_dos" for f in sim_events)
 
 
+async def test_manual_dos_expires_so_the_system_can_recover():
+    s = _session()
+    s.send_dos("public-facing", duration_ms=200)
+    gt = s.sim.ground_truth()
+    now = s.clock.now_ms()
+    assert gt.is_attack(Segment.PUBLIC_FACING, now) is True  # active now
+    assert gt.is_attack(Segment.PUBLIC_FACING, now + 500) is False  # subsided later
+
+
 async def test_send_legal_does_not_inject_an_attack():
     s = _session()
     q = s.hub.subscribe()

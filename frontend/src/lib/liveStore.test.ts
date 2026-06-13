@@ -58,6 +58,18 @@ describe("liveReduce", () => {
     expect(atk!.segment).toBe("public-facing");
   });
 
+  it("synthesizes a verified-legitimate flow from a manual legal sim_event", () => {
+    const s = liveReduce(
+      initialLiveState,
+      frame("sim_event", { signal: "manual_legal", segment: "public-facing" }, 60),
+    );
+    const legal = s.events.find(
+      (e) => e.event_type === "THREAT_CLASSIFIED" && e.payload?.classification === "NORMAL",
+    );
+    expect(legal).toBeTruthy();
+    expect(legal!.payload.reported).toBe(false);
+  });
+
   it("updates connection and simulation state", () => {
     let s = liveReduce(
       initialLiveState,
