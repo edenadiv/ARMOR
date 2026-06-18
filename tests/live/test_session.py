@@ -126,3 +126,45 @@ async def test_run_loop_step_gate_holds_until_next():
     assert await _wait_until(lambda: s._round >= 1)  # advances once Next is requested
     s.stop()
     await asyncio.wait_for(task, timeout=2.0)
+
+
+async def test_metrics_frame_carries_real_social_welfare():
+    s = _session()
+    q = s.hub.subscribe()
+    for _ in range(30):  # warm up the baseline
+        await s.tick_round()
+    s.send_dos("public-facing", intensity=4.0)
+    for _ in range(20):  # detect -> classify -> respond
+        await s.tick_round()
+    metrics = [f for f in _drain(q) if f.kind == "metrics"]
+    assert metrics, "expected the session to stream backend-computed metrics"
+    latest = metrics[-1].payload
+    # Real values from the analytics module, not the frontend's hardcoded 0 placeholders.
+    assert latest["social_welfare"] > 0
+    assert 0.0 <= latest["dr"] <= 1.0
+
+
+async def test_packets_frame_streams_sampled_traffic():
+    s = _session()
+    q = s.hub.subscribe()
+    s.send_dos("public-facing", intensity=4.0)
+    for _ in range(5):
+        await s.tick_round()
+    packet_frames = [f for f in _drain(q) if f.kind == "packets"]
+    assert packet_frames, "expected the session to stream sampled packets for the war-room sprites"
+    sample = packet_frames[-1].payload["packets"]
+    assert isinstance(sample, list) and sample
+    assert {"src_ip", "kind", "segment", "ts_ms"} <= set(sample[0].keys())
+
+
+async def test_bus_connected_reflects_real_bus_state():
+    s = _session()
+    q = s.hub.subscribe()
+    await s.bus.start()
+    await s.tick_round()
+    status = [f for f in _drain(q) if f.kind == "connection_status"]
+    assert status and status[-1].payload["bus_connected"] is True
+    await s.bus.stop()
+    s.emit_status()
+    status = [f for f in _drain(q) if f.kind == "connection_status"]
+    assert status and status[-1].payload["bus_connected"] is False  # honest, not hardcoded

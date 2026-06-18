@@ -10,16 +10,21 @@ no prebaked replay.
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 from typing import Any
 
 from cdmas.agents.factory import build_all
+from cdmas.analytics.metrics import compute_metrics
 from cdmas.common.bdi.base_agent import BaseAgent
+from cdmas.common.logging.event_log import EventLog, EventSink
 from cdmas.common.messaging.bus import InMemoryBus
 from cdmas.common.models.enums import AttackType, Segment
 from cdmas.common.timing.clock import ManualClock
 from cdmas.coordination.failure import HeartbeatMonitor
 from cdmas.live.hub import (
     KIND_CONNECTION_STATUS,
+    KIND_METRICS,
+    KIND_PACKETS,
     KIND_SIM_EVENT,
     KIND_SIMULATION_STATE,
     EventHub,
@@ -31,6 +36,24 @@ from cdmas.simulator.sampling import PacketSampler
 
 _STEP_MS = 50  # sim time advanced per round
 _INTERVAL_S = 0.12  # real time between rounds (playback pace)
+
+
+class _EventCollector(EventSink):
+    """Bounded rolling buffer of recent agent events, for live metric computation.
+
+    Capped so a long-running live server stays memory-bounded. Wired as the HubSink's inner
+    sink, so every event is both streamed to the dashboard and retained for ``compute_metrics``.
+    """
+
+    def __init__(self, maxlen: int = 4000) -> None:
+        self._events: deque[EventLog] = deque(maxlen=maxlen)
+
+    async def write(self, event: EventLog) -> None:
+        self._events.append(event)
+
+    @property
+    def events(self) -> list[EventLog]:
+        return list(self._events)
 
 
 class LiveSession:
@@ -52,7 +75,8 @@ class LiveSession:
             clock=self.clock, segments=segments, seed=seed, sampler=self.sampler
         )
         self.bus = InMemoryBus()
-        self.sink = HubSink(self.hub)
+        self.collector = _EventCollector()
+        self.sink = HubSink(self.hub, inner=self.collector)
         self.agents: list[BaseAgent] = build_all(
             segments, self.bus, self.sim, self.sink, self.clock
         )
@@ -137,6 +161,7 @@ class LiveSession:
         self.sim.injector.prune_expired(self.clock.now_ms())  # bound memory on long runs
         self._round += 1
         self._emit_status(self.clock.now_ms())
+        self._emit_metrics_and_packets(self.clock.now_ms())
 
     def _emit_status(self, now: float) -> None:
         failed = set(self.monitor.failed(now))
@@ -146,7 +171,7 @@ class LiveSession:
             {
                 "agents_connected": connected,
                 "agents_total": len(self.agents),
-                "bus_connected": True,
+                "bus_connected": self.bus.running,
                 "stream_connected": self.hub.subscribers > 0,
             },
             ts_ms=now,
@@ -162,17 +187,40 @@ class LiveSession:
             ts_ms=now,
         )
 
+    def _emit_metrics_and_packets(self, now: float) -> None:
+        # Real metrics from the analytics module (SW, DR, FPR, attacker utility) — the dashboard
+        # no longer has to fake these. We have the in-process ground truth right here.
+        events = self.collector.events
+        if events:
+            metrics = compute_metrics(
+                events,
+                self.sim.ground_truth(),
+                segment_count=len(self.segments),
+                total_time_ms=max(now, 1.0),
+            )
+            self.hub.publish(KIND_METRICS, metrics.model_dump(mode="json"), ts_ms=now)
+        # This round's representative packet sample feeds the war-room sprites; reset so the
+        # next round captures fresh traffic (and the sampler stays bounded on long runs).
+        packets = self.sampler.export()
+        if packets:
+            self.hub.publish(KIND_PACKETS, {"packets": packets}, ts_ms=now)
+        self.sampler.reset()
+
     async def run(self, *, interval_s: float = _INTERVAL_S) -> None:
         self._running = True
-        self._emit_status(self.clock.now_ms())
-        while self._running:
-            if self.mode == "step":
-                self.awaiting_next = True
-                self._emit_status(self.clock.now_ms())
-                await self._next.wait()
-                self._next.clear()
-                self.awaiting_next = False
-                if not self._running:
-                    break
-            await self.tick_round()  # tick_round advances the clock by one full round
-            await asyncio.sleep(interval_s)
+        await self.bus.start()  # bus_connected now reflects this real state
+        try:
+            self._emit_status(self.clock.now_ms())
+            while self._running:
+                if self.mode == "step":
+                    self.awaiting_next = True
+                    self._emit_status(self.clock.now_ms())
+                    await self._next.wait()
+                    self._next.clear()
+                    self.awaiting_next = False
+                    if not self._running:
+                        break
+                await self.tick_round()  # tick_round advances the clock by one full round
+                await asyncio.sleep(interval_s)
+        finally:
+            await self.bus.stop()

@@ -227,8 +227,9 @@ export default function App() {
         duration_ms: liveT,
         topology: liveState.topology,
         events: liveState.events,
-        metrics: liveMetrics(liveState),
-        packets: [],
+        // Prefer the backend's real metrics; fall back to the live heuristic until the first frame.
+        metrics: liveState.metrics ?? liveMetrics(liveState),
+        packets: liveState.packets,
       },
       validation: bundle.validation,
     }),

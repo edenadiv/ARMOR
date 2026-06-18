@@ -147,3 +147,39 @@ describe("liveMetrics", () => {
     expect(Number.isNaN(m.availability)).toBe(false);
   });
 });
+
+describe("metrics & packets frames", () => {
+  it("stores backend-computed metrics from a metrics frame", () => {
+    const s = liveReduce(
+      initialLiveState,
+      frame("metrics", { dr: 1, fpr: 0, social_welfare: 0.93, attacker_utility: 0.1 }),
+    );
+    // Real SW/attacker_utility from the backend analytics, not the live heuristic's neutral 0.
+    expect(s.metrics?.social_welfare).toBe(0.93);
+    expect(s.metrics?.attacker_utility).toBe(0.1);
+  });
+
+  it("stores sampled packets from a packets frame", () => {
+    const s = liveReduce(
+      initialLiveState,
+      frame("packets", {
+        packets: [
+          {
+            src_ip: "203.0.1.2",
+            dst_ip: "10.0.0.1",
+            port: 443,
+            protocol: "TCP",
+            pkt_size: 512,
+            freq: 5000,
+            ts_ms: 50,
+            kind: "ddos",
+            segment: "public-facing",
+            alert_ms: null,
+          },
+        ],
+      }),
+    );
+    expect(s.packets).toHaveLength(1);
+    expect(s.packets[0].kind).toBe("ddos");
+  });
+});

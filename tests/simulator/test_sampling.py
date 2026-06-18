@@ -31,6 +31,14 @@ def _malicious(attack: AttackType, segment: Segment = SEG, intensity: float = 3.
     return inj.overlay(segment, now_ms=0.0)
 
 
+def test_reset_clears_sampled_flows():
+    sampler = PacketSampler()
+    sampler.observe(SEG, 100.0, _benign(), _malicious(AttackType.DDOS))
+    assert sampler.export()  # captured this window's traffic
+    sampler.reset()
+    assert sampler.export() == []  # reset drops all flows so the next window is fresh (live mode)
+
+
 def test_classify_kind_matches_real_attack_signatures():
     assert classify_kind(_malicious(AttackType.DDOS)[0]) == "ddos"
     assert classify_kind(_malicious(AttackType.PORT_SCAN)[0]) == "port_scan"

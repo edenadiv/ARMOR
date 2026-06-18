@@ -118,6 +118,14 @@ class PacketSampler:
         rows.sort(key=lambda sp: (sp.ts_ms, sp.segment, sp.kind, str(sp.src_ip), sp.port))
         return [asdict(sp) for sp in rows]
 
+    def reset(self) -> None:
+        """Drop all sampled flows so the next ``observe`` captures a fresh window.
+
+        The validator samples once across a whole scenario, but a long-running live session
+        wants each round's *current* traffic (and bounded memory), so it resets per round.
+        """
+        self._flows.clear()
+
 
 def correlate_alert_ms(
     packets: list[dict[str, Any]], alerts_by_segment: dict[str, list[float]]

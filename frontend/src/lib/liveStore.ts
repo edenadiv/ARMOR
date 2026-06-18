@@ -1,7 +1,7 @@
 /* Live store: fold the backend WebSocket frames into the SAME DerivedState the replay
    engine produces, so every panel works in live mode unchanged. Pure reducer — unit-tested. */
 import { type DerivedState, deriveState } from "./replay";
-import type { CdmasEvent, Metrics, TopologyInfo } from "./types";
+import type { CdmasEvent, Metrics, SampledPacket, TopologyInfo } from "./types";
 
 export interface StreamFrame {
   kind: string;
@@ -30,6 +30,8 @@ export interface LiveState {
   topology: TopologyInfo;
   conn: ConnStatus;
   sim: SimMode;
+  metrics: Metrics | null; // backend-computed; null until the first metrics frame arrives
+  packets: SampledPacket[]; // latest round's sampled traffic, for the war-room sprites
   lastTs: number;
 }
 
@@ -40,6 +42,8 @@ export const initialLiveState: LiveState = {
   topology: { segments: [], adjacency: {} },
   conn: { agents_connected: 0, agents_total: 0, bus_connected: false, stream_connected: false },
   sim: { mode: "auto", paused: true, awaiting_next: false, round: 0 },
+  metrics: null,
+  packets: [],
   lastTs: 0,
 };
 
@@ -98,6 +102,12 @@ export function liveReduce(state: LiveState, frame: StreamFrame): LiveState {
       return { ...state, conn: { ...state.conn, ...frame.payload } };
     case "simulation_state":
       return { ...state, sim: { ...state.sim, ...frame.payload } };
+    case "metrics":
+      // Real metrics computed by the backend (it has the ground truth the frontend lacks).
+      return { ...state, metrics: frame.payload as Metrics };
+    case "packets":
+      // Sampled traffic for the war-room sprites (replaced each round; live and bounded).
+      return { ...state, packets: (frame.payload.packets ?? []) as SampledPacket[] };
     default:
       return state;
   }
