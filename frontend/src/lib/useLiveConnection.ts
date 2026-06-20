@@ -15,6 +15,7 @@ export interface LiveConnection {
   connected: boolean;
   sendDos: (segment: string) => void;
   sendLegal: (segment: string) => void;
+  sendAttack: (type: string, segment: string | string[], intensity?: number) => void;
   setRunMode: (m: "auto" | "step") => void;
   next: () => void;
 }
@@ -95,6 +96,14 @@ export function useLiveConnection(enabled: boolean): LiveConnection {
     connected,
     sendDos: (segment) => post("/manual/send-dos", { segment }),
     sendLegal: (segment) => post("/manual/send-legal", { segment }),
+    sendAttack: (type, segment, intensity) => {
+      // Coordinated mode injects the same attack on every segment (one POST each) so the
+      // multi-segment correlation -> coalition -> vote path lights up.
+      const segs = Array.isArray(segment) ? segment : [segment];
+      for (const s of segs) {
+        post("/manual/send-attack", { attack_type: type, segment: s, intensity });
+      }
+    },
     setRunMode: (mode) => post("/control/mode", { mode }),
     next: () => post("/control/next", {}),
   };

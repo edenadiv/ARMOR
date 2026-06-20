@@ -7,7 +7,7 @@ engine for production.
 
 from __future__ import annotations
 
-from cdmas.common.models.enums import Segment
+from cdmas.common.models.enums import ResourceType, ResponseType, Segment
 from cdmas.common.timing.clock import Clock
 from cdmas.simulator.attacks import AttackInjector, AttackSpec, GroundTruth
 from cdmas.simulator.clock import SimClock
@@ -27,6 +27,15 @@ from cdmas.simulator.traffic import TrafficGenerator
 
 _THROTTLE_FACTOR = 0.2  # malicious volume retained while THROTTLE is active
 _PACKETS_PER_TICK = 50
+
+# Each active defense reserves one resource slot on its segment (deduped per segment so
+# overhead stays bounded well under the 40% cap). Released when the threat clears.
+_RESPONSE_RESOURCE: dict[ResponseType, ResourceType] = {
+    ResponseType.THROTTLE: ResourceType.DPI_SLOT,
+    ResponseType.BLOCK: ResourceType.DPI_SLOT,
+    ResponseType.REDEPLOY: ResourceType.DPI_SLOT,
+    ResponseType.QUARANTINE: ResourceType.QUARANTINE_SLOT,
+}
 
 
 class InProcessSimulator:
@@ -51,6 +60,7 @@ class InProcessSimulator:
         self.resources = resource_pool or ResourcePool()
         self.sampler = sampler  # optional dashboard packet capture (validator path only)
         self._last: dict[Segment, list[Packet]] = {s: [] for s in self.segments}
+        self._slots: dict[Segment, set[ResourceType]] = {}  # resource slots held per segment
 
     # --- environment driving ---------------------------------------------
     def tick(self) -> None:
@@ -83,7 +93,22 @@ class InProcessSimulator:
         return self._last.get(segment, [])[:n]
 
     async def apply_action(self, req: ActionRequest) -> ActionResult:
-        return self.state.apply_action(req)
+        result = self.state.apply_action(req)
+        # Reserve a resource slot for the new defensive posture, deduped per segment+type so
+        # overhead stays bounded (worst case 32% across 4 segments) and grants never fail.
+        rtype = _RESPONSE_RESOURCE.get(req.type)
+        if rtype is not None:
+            held = self._slots.setdefault(req.segment, set())
+            if rtype not in held and self.resources.grant(rtype, 1):
+                held.add(rtype)
+        return result
+
+    def release_segment(self, segment: Segment) -> None:
+        # Free a segment's reserved slots and lift its defenses so overhead falls and the
+        # segment visibly recovers once its threat has cleared (driven by the live session).
+        for rtype in self._slots.pop(segment, set()):
+            self.resources.release(rtype, 1)
+        self.state.clear_defenses(segment)
 
     async def get_topology(self) -> TopologyView:
         return TopologyView(segments=list(self.segments), adjacency=self.topology.adjacency_view())

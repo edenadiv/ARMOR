@@ -15,6 +15,7 @@ export interface LiveControls {
   segments: string[];
   sendDos: (segment: string) => void;
   sendLegal: (segment: string) => void;
+  sendAttack: (type: string, segment: string | string[], intensity?: number) => void;
   setRunMode: (m: "auto" | "step") => void;
   next: () => void;
 }

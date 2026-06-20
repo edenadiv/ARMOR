@@ -70,6 +70,19 @@ describe("liveReduce", () => {
     expect(legal!.payload.reported).toBe(false);
   });
 
+  it("synthesizes a typed attacker flow from any manual_<type> sim_event", () => {
+    const s = liveReduce(
+      initialLiveState,
+      frame("sim_event", { signal: "manual_lateral", segment: "internal", attack_type: "LATERAL" }, 70),
+    );
+    const atk = s.events.find((e) => e.payload?.signal === "attack_action");
+    expect(atk).toBeTruthy();
+    expect(atk!.agent_type).toBe("ATK");
+    expect(atk!.agent_id).toBe("ATK:lateral");
+    expect(atk!.payload.attack_type).toBe("LATERAL");
+    expect(atk!.segment).toBe("internal");
+  });
+
   it("updates connection and simulation state", () => {
     let s = liveReduce(
       initialLiveState,

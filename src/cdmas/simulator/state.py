@@ -55,3 +55,10 @@ class StateManager:
                 accepted=True, effectiveness=eff, detail=f"{req.type.value} applied"
             )
         return ActionResult(accepted=True, effectiveness=eff, detail="monitoring")
+
+    def clear_defenses(self, segment: Segment) -> None:
+        # Lift every defense on a segment and return it to NORMAL — used when its threat has
+        # cleared so the simulator can free the resources those defenses reserved.
+        self._defenses[segment] = []
+        self._quarantined.discard(segment)
+        self._health[segment] = NORMAL

@@ -298,6 +298,7 @@ export default function App() {
           segments: liveState.topology.segments,
           sendDos: liveConn.sendDos,
           sendLegal: liveConn.sendLegal,
+          sendAttack: liveConn.sendAttack,
           setRunMode: liveConn.setRunMode,
           next: liveConn.next,
         },

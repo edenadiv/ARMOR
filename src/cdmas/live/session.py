@@ -36,6 +36,7 @@ from cdmas.simulator.sampling import PacketSampler
 
 _STEP_MS = 50  # sim time advanced per round
 _INTERVAL_S = 0.12  # real time between rounds (playback pace)
+_METRICS_WINDOW_MS = 12_000  # trailing window (sim ms) that live DR/FPR are scored over
 
 
 class _EventCollector(EventSink):
@@ -88,6 +89,7 @@ class LiveSession:
         self._next = asyncio.Event()
         self._running = False
         self._round = 0
+        self._active_attacks: set[Segment] = set()  # segments with a live attack (for release)
 
     # --- control -----------------------------------------------------------
     def set_mode(self, mode: str) -> None:
@@ -128,6 +130,34 @@ class LiveSession:
             ts_ms=now,
         )
 
+    def send_attack(
+        self, attack_type: str, segment: str, intensity: float = 3.0, duration_ms: int = 3000
+    ) -> None:
+        # Inject any typed bounded attack and announce it so the UI shows the matching flow.
+        # Lets the live demo drive lateral/zero-day (which escalate to quarantine votes and
+        # TIA coalitions), not just DoS. Unknown type/segment strings raise ValueError.
+        now = self.clock.now_ms()
+        self.sim.inject(
+            AttackSpec(
+                type=AttackType(attack_type),
+                segment=Segment(segment),
+                intensity=intensity,
+                start_ms=now,
+                duration_ms=duration_ms,
+            )
+        )
+        self.hub.publish(
+            KIND_SIM_EVENT,
+            {
+                "signal": f"manual_{attack_type.lower()}",
+                "segment": segment,
+                "attack_type": attack_type,
+                "intensity": intensity,
+                "duration_ms": duration_ms,
+            },
+            ts_ms=now,
+        )
+
     def send_legal(self, segment: str, volume: float = 1.0) -> None:
         # Legal traffic is the always-on baseline; announce a pulse so the UI can show
         # green flow without tripping any alert (no attack is injected).
@@ -148,6 +178,16 @@ class LiveSession:
     def emit_status(self) -> None:
         self._emit_status(self.clock.now_ms())
 
+    def _release_expired_segments(self) -> None:
+        # When a manual attack ends, release its segment's reserved resources and lift its
+        # defenses so overhead falls and the segment recovers. Live-only: the validator runs
+        # fixed-length scenarios and never calls this, so its overhead holds a bounded steady
+        # state. `active(now)` is time-based, so a just-expired spec is no longer "active".
+        active = {spec.segment for spec in self.sim.injector.active(self.clock.now_ms())}
+        for seg in self._active_attacks - active:
+            self.sim.release_segment(seg)
+        self._active_attacks = active
+
     async def tick_round(self) -> None:
         self.sim.tick()
         # Spread the agents across the round (sub-step the clock between them) so the
@@ -158,7 +198,7 @@ class LiveSession:
             await agent.step()
             self.monitor.beat(agent.agent_id, self.clock.now_ms())
             self.clock.advance(sub)
-        self.sim.injector.prune_expired(self.clock.now_ms())  # bound memory on long runs
+        self._release_expired_segments()  # free resources/defenses for attacks that just ended
         self._round += 1
         self._emit_status(self.clock.now_ms())
         self._emit_metrics_and_packets(self.clock.now_ms())
@@ -187,10 +227,21 @@ class LiveSession:
             ts_ms=now,
         )
 
+    def _windowed_events(self, now: float) -> list[EventLog]:
+        """Events within the trailing scoring window — keeps DR/FPR a coherent 'recent' figure."""
+        floor = now - _METRICS_WINDOW_MS
+        return [e for e in self.collector.events if e.wall_ms >= floor]
+
     def _emit_metrics_and_packets(self, now: float) -> None:
         # Real metrics from the analytics module (SW, DR, FPR, attacker utility) — the dashboard
         # no longer has to fake these. We have the in-process ground truth right here.
-        events = self.collector.events
+        # Score events and ground truth over the SAME trailing window: prune attacks at the
+        # window floor (not at expiry) so a just-expired attack is still scored against its own
+        # detections — otherwise DR resets to a vacuous 100% while those detections look like
+        # false positives. `active(now)` still yields no packets for an expired spec (so the
+        # overlay/recovery is unchanged), and pruning past the window bounds memory.
+        self.sim.injector.prune_expired(now - _METRICS_WINDOW_MS)
+        events = self._windowed_events(now)
         if events:
             metrics = compute_metrics(
                 events,

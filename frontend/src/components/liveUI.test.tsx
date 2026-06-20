@@ -72,6 +72,7 @@ function ctx(overrides: Partial<ReplayCtx> = {}): ReplayCtx {
       segments: ["public-facing", "internal"],
       sendDos: vi.fn(),
       sendLegal: vi.fn(),
+      sendAttack: vi.fn(),
       setRunMode: vi.fn(),
       next: vi.fn(),
     },
@@ -90,6 +91,16 @@ describe("LiveControls", () => {
     provide(c, <ReplayControls />);
     fireEvent.click(btn(/Send DoS/));
     expect(c.live.sendDos).toHaveBeenCalledWith("public-facing");
+  });
+
+  it("Inject calls sendAttack with the selected type and segment", () => {
+    const c = ctx();
+    provide(c, <ReplayControls />);
+    fireEvent.click(btn(/Inject/));
+    expect(c.live.sendAttack).toHaveBeenCalled();
+    const [type, seg] = (c.live.sendAttack as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(typeof type).toBe("string");
+    expect(seg).toBe("public-facing");
   });
 
   it("Next is disabled when the sim is not awaiting it", () => {

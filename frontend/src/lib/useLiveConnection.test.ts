@@ -68,4 +68,27 @@ describe("useLiveConnection", () => {
     expect(url).toContain("/manual/send-dos");
     expect(opts?.method).toBe("POST");
   });
+
+  it("posts a typed attack to the backend", () => {
+    const fetchMock = okFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => useLiveConnection(true));
+    result.current.sendAttack("LATERAL", "internal");
+    expect(fetchMock).toHaveBeenCalled();
+    const [url, opts] = fetchMock.mock.calls[0];
+    expect(url).toContain("/manual/send-attack");
+    expect(opts?.method).toBe("POST");
+    expect(JSON.parse(opts?.body as string)).toMatchObject({
+      attack_type: "LATERAL",
+      segment: "internal",
+    });
+  });
+
+  it("coordinated attack posts once per segment", () => {
+    const fetchMock = okFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => useLiveConnection(true));
+    result.current.sendAttack("LATERAL", ["internal", "server"]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });

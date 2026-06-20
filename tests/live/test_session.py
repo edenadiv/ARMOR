@@ -2,6 +2,7 @@
 
 import asyncio
 
+from cdmas.common.logging.event_log import EventLog, EventType
 from cdmas.common.models.enums import Segment
 from cdmas.common.timing.clock import ManualClock
 from cdmas.live.hub import StreamFrame
@@ -168,3 +169,95 @@ async def test_bus_connected_reflects_real_bus_state():
     s.emit_status()
     status = [f for f in _drain(q) if f.kind == "connection_status"]
     assert status and status[-1].payload["bus_connected"] is False  # honest, not hardcoded
+
+
+async def test_metrics_window_keeps_dr_fpr_coherent():
+    s = _session()
+    q = s.hub.subscribe()
+    for _ in range(30):  # warm up the baseline
+        await s.tick_round()
+    s.send_dos("public-facing", intensity=4.0, duration_ms=300)
+    for _ in range(30):  # attack runs ~6 rounds, then expires — all within the metrics window
+        await s.tick_round()
+    reported = [
+        e
+        for e in s.collector.events
+        if e.event_type is EventType.THREAT_CLASSIFIED and e.payload.get("reported")
+    ]
+    assert reported, "expected the live fleet to classify the injected DoS"
+    metrics = [f for f in _drain(q) if f.kind == "metrics"]
+    assert metrics
+    m = metrics[-1].payload
+    # The attack expired (pruned from the overlay) but is still inside the scoring window,
+    # so its detections must NOT flip to false positives: no vacuous DR=100% with FPR>0.
+    assert not (m["dr"] == 1.0 and m["fpr"] > 0.0)
+    assert m["fpr"] == 0.0
+
+
+async def test_metrics_window_drops_events_older_than_window():
+    s = _session()
+    now = 50_000.0
+    old = EventLog(
+        lamport_ts=1,
+        wall_ms=now - 20_000.0,
+        event_type=EventType.ALERT_PUBLISHED,
+        agent_id="TMA:public-facing",
+        agent_type="TMA",
+    )
+    recent = EventLog(
+        lamport_ts=2,
+        wall_ms=now - 1_000.0,
+        event_type=EventType.ALERT_PUBLISHED,
+        agent_id="TMA:public-facing",
+        agent_type="TMA",
+    )
+    await s.collector.write(old)
+    await s.collector.write(recent)
+    windowed = s._windowed_events(now)
+    assert recent in windowed
+    assert old not in windowed
+
+
+async def test_send_attack_injects_typed_attack_and_emits_sim_event():
+    s = _session()
+    q = s.hub.subscribe()
+    s.send_attack("LATERAL", "public-facing", intensity=4.0)
+    assert s.sim.ground_truth().is_attack(Segment.PUBLIC_FACING, s.clock.now_ms()) is True
+    sim_events = [f for f in _drain(q) if f.kind == "sim_event"]
+    assert any(f.payload.get("signal") == "manual_lateral" for f in sim_events)
+    assert any(f.payload.get("attack_type") == "LATERAL" for f in sim_events)
+    # send_dos still emits its own manual_dos signal (thin wrapper, no regression)
+    s.send_dos("public-facing")
+    assert any(f.payload.get("signal") == "manual_dos" for f in _drain(q) if f.kind == "sim_event")
+
+
+async def test_send_attack_multi_segment_forms_coalition():
+    s = LiveSession(segments=list(Segment), clock=ManualClock())
+    for _ in range(30):  # warm up
+        await s.tick_round()
+    # Two concurrent containment attacks → TIA correlates ≥2 active segments → coalition,
+    # and the high-severity lateral escalates to quarantine votes.
+    s.send_attack("LATERAL", "internal", intensity=5.0, duration_ms=6000)
+    s.send_attack("LATERAL", "server", intensity=5.0, duration_ms=6000)
+    for _ in range(60):
+        await s.tick_round()
+    # Read the retained event buffer (the hub queue is small and drops the early frames).
+    types = {e.event_type for e in s.collector.events}
+    assert EventType.COALITION_FORMED in types  # the coordination layer now runs in live mode
+    assert EventType.VOTE_CAST in types  # quarantine escalates through a coalition vote
+
+
+async def test_overhead_rises_during_incident_then_recovers():
+    s = _session()
+    for _ in range(30):  # warm up
+        await s.tick_round()
+    s.send_dos("public-facing", intensity=4.0, duration_ms=600)
+    peak = 0.0
+    for _ in range(40):
+        await s.tick_round()
+        peak = max(peak, s.sim.resources.utilization())
+    assert peak > 0.0  # a response allocated a real resource slot during the incident
+    assert s.sim.resources.utilization() == 0.0  # released once the attack expired
+    state = await s.sim.get_state()
+    pf = next(x for x in state.segments if x.segment is Segment.PUBLIC_FACING)
+    assert pf.active_defenses == []

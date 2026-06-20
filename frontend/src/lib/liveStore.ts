@@ -64,25 +64,10 @@ export function liveReduce(state: LiveState, frame: StreamFrame): LiveState {
       };
     case "agent_event":
       return append(state, frame.payload as CdmasEvent);
-    case "sim_event":
-      // A manual DoS becomes a visible attacker->network flow until the TMA reacts.
-      if (frame.payload.signal === "manual_dos") {
-        return append(state, {
-          event_id: `sim-${frame.server_seq}`,
-          lamport_ts: 0,
-          wall_ms: frame.ts_ms,
-          event_type: "ACTION_EXECUTED",
-          timestamp: "",
-          agent_id: "ATK:ddos",
-          agent_type: "ATK",
-          segment: frame.payload.segment ?? null,
-          payload: { signal: "attack_action", attack_type: frame.payload.attack_type ?? "DDOS" },
-          latency_ms: null,
-          decision_trace: null,
-        });
-      }
-      // A manual legal pulse shows the green "verified normal traffic" flow.
-      if (frame.payload.signal === "manual_legal") {
+    case "sim_event": {
+      const sig: string = frame.payload.signal ?? "";
+      // A manual legal pulse shows the green "verified normal traffic" flow (no attack).
+      if (sig === "manual_legal") {
         return append(state, {
           event_id: `sim-${frame.server_seq}`,
           lamport_ts: 0,
@@ -97,7 +82,28 @@ export function liveReduce(state: LiveState, frame: StreamFrame): LiveState {
           decision_trace: null,
         });
       }
+      // Any other manual_<type> (dos, lateral, zero_day, …) becomes a visible attacker ->
+      // network flow until the fleet reacts. The ATK:<type> id maps to a graph node via
+      // attackerNodeFor, so no new sprite/node wiring is needed.
+      if (sig.startsWith("manual_")) {
+        const type: string =
+          frame.payload.attack_type ?? sig.slice("manual_".length).toUpperCase();
+        return append(state, {
+          event_id: `sim-${frame.server_seq}`,
+          lamport_ts: 0,
+          wall_ms: frame.ts_ms,
+          event_type: "ACTION_EXECUTED",
+          timestamp: "",
+          agent_id: `ATK:${type.toLowerCase()}`,
+          agent_type: "ATK",
+          segment: frame.payload.segment ?? null,
+          payload: { signal: "attack_action", attack_type: type },
+          latency_ms: null,
+          decision_trace: null,
+        });
+      }
       return state;
+    }
     case "connection_status":
       return { ...state, conn: { ...state.conn, ...frame.payload } };
     case "simulation_state":
