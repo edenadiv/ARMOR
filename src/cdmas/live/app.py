@@ -30,6 +30,13 @@ class ManualLegal(BaseModel):
     volume: float = 1.0
 
 
+class ManualAttack(BaseModel):
+    attack_type: str
+    segment: str
+    intensity: float = 3.0
+    duration_ms: int = 3000
+
+
 class ModeReq(BaseModel):
     mode: str
 
@@ -90,6 +97,15 @@ def create_live_app(
     def send_legal(req: ManualLegal, _: None = Depends(auth)) -> dict[str, Any]:
         session.send_legal(req.segment, req.volume)
         return {"status": "ok", "signal": "manual_legal", "segment": req.segment}
+
+    @app.post("/manual/send-attack")
+    def send_attack(req: ManualAttack, _: None = Depends(auth)) -> dict[str, Any]:
+        session.send_attack(req.attack_type, req.segment, req.intensity, req.duration_ms)
+        return {
+            "status": "ok",
+            "signal": f"manual_{req.attack_type.lower()}",
+            "segment": req.segment,
+        }
 
     @app.post("/control/mode")
     def control_mode(req: ModeReq, _: None = Depends(auth)) -> dict[str, Any]:

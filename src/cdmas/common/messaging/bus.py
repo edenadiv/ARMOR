@@ -67,6 +67,18 @@ class InMemoryBus(MessageBus):
         self._seen: dict[str, int] = {}  # sender -> highest seq delivered (dedup)
         self._clock = LamportClock()
         self._lock = asyncio.Lock()
+        self._running = False
+
+    @property
+    def running(self) -> bool:
+        """Whether the bus has been started (and not stopped) — a real, reportable state."""
+        return self._running
+
+    async def start(self) -> None:
+        self._running = True
+
+    async def stop(self) -> None:
+        self._running = False
 
     def subscribe(self, topic: Topic, agent_id: str) -> Subscription:
         queue: asyncio.Queue[ACLMessage] = asyncio.Queue()

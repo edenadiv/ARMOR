@@ -15,6 +15,15 @@ def _msg(sender: str, seq: int, receiver: str = "BROADCAST") -> ACLMessage:
     )
 
 
+async def test_bus_reports_running_state():
+    bus = InMemoryBus()
+    assert bus.running is False  # not started yet
+    await bus.start()
+    assert bus.running is True
+    await bus.stop()
+    assert bus.running is False  # a stopped bus is honestly reported as down
+
+
 async def test_fifo_delivery_and_lamport_stamp():
     bus = InMemoryBus()
     sub = bus.subscribe(Topic.ALERTS, "ACA:seg1")

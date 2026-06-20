@@ -93,6 +93,22 @@ def test_autostart_runs_loop_and_shuts_down():
     # leaving the context triggers shutdown (stop + task cancel)
 
 
+def test_send_attack_endpoint_injects_typed_attack():
+    c, s = _client()
+    # auth required
+    unauth = c.post(
+        "/manual/send-attack", json={"attack_type": "LATERAL", "segment": "public-facing"}
+    )
+    assert unauth.status_code == 401
+    r = c.post(
+        "/manual/send-attack",
+        json={"attack_type": "LATERAL", "segment": "public-facing", "intensity": 4.0},
+        headers=_AUTH,
+    )
+    assert r.status_code == 200 and r.json()["signal"] == "manual_lateral"
+    assert s.sim.ground_truth().is_attack(Segment.PUBLIC_FACING, 0.0) is True
+
+
 def test_build_app_constructs_without_serving():
     from cdmas.live.__main__ import build_app
 

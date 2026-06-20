@@ -70,6 +70,19 @@ describe("liveReduce", () => {
     expect(legal!.payload.reported).toBe(false);
   });
 
+  it("synthesizes a typed attacker flow from any manual_<type> sim_event", () => {
+    const s = liveReduce(
+      initialLiveState,
+      frame("sim_event", { signal: "manual_lateral", segment: "internal", attack_type: "LATERAL" }, 70),
+    );
+    const atk = s.events.find((e) => e.payload?.signal === "attack_action");
+    expect(atk).toBeTruthy();
+    expect(atk!.agent_type).toBe("ATK");
+    expect(atk!.agent_id).toBe("ATK:lateral");
+    expect(atk!.payload.attack_type).toBe("LATERAL");
+    expect(atk!.segment).toBe("internal");
+  });
+
   it("updates connection and simulation state", () => {
     let s = liveReduce(
       initialLiveState,
@@ -145,5 +158,41 @@ describe("liveMetrics", () => {
     expect(m.mttr_response_ms).toBe(0);
     expect(m.availability).toBe(1);
     expect(Number.isNaN(m.availability)).toBe(false);
+  });
+});
+
+describe("metrics & packets frames", () => {
+  it("stores backend-computed metrics from a metrics frame", () => {
+    const s = liveReduce(
+      initialLiveState,
+      frame("metrics", { dr: 1, fpr: 0, social_welfare: 0.93, attacker_utility: 0.1 }),
+    );
+    // Real SW/attacker_utility from the backend analytics, not the live heuristic's neutral 0.
+    expect(s.metrics?.social_welfare).toBe(0.93);
+    expect(s.metrics?.attacker_utility).toBe(0.1);
+  });
+
+  it("stores sampled packets from a packets frame", () => {
+    const s = liveReduce(
+      initialLiveState,
+      frame("packets", {
+        packets: [
+          {
+            src_ip: "203.0.1.2",
+            dst_ip: "10.0.0.1",
+            port: 443,
+            protocol: "TCP",
+            pkt_size: 512,
+            freq: 5000,
+            ts_ms: 50,
+            kind: "ddos",
+            segment: "public-facing",
+            alert_ms: null,
+          },
+        ],
+      }),
+    );
+    expect(s.packets).toHaveLength(1);
+    expect(s.packets[0].kind).toBe("ddos");
   });
 });

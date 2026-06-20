@@ -19,6 +19,8 @@ KIND_AGENT_EVENT = "agent_event"
 KIND_SIM_EVENT = "sim_event"
 KIND_CONNECTION_STATUS = "connection_status"
 KIND_SIMULATION_STATE = "simulation_state"
+KIND_METRICS = "metrics"
+KIND_PACKETS = "packets"
 
 
 class StreamFrame(BaseModel):
