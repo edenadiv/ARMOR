@@ -3,7 +3,7 @@ import { createContext, useContext } from "react";
 import type { Beat } from "./director";
 import type { ConnStatus, SimMode } from "./liveStore";
 import type { DerivedState } from "./replay";
-import type { ExportData } from "./types";
+import type { BaselinePoint, ExportData } from "./types";
 
 export type DirectorMode = "manual" | "auto";
 export type ViewMode = "replay" | "live";
@@ -18,6 +18,7 @@ export interface LiveControls {
   sendAttack: (type: string, segment: string | string[], intensity?: number) => void;
   setRunMode: (m: "auto" | "step") => void;
   next: () => void;
+  baselines: Record<string, BaselinePoint[]>; // continuous anti-poisoning series (live)
 }
 
 export interface DirectorState {

@@ -35,6 +35,7 @@ export function Header({ onStepThrough }: { onStepThrough: () => void }) {
           </Link>
         </div>
         <nav className="nav">
+          <NavLink to="/network">Network</NavLink>
           <NavLink to="/inspector">Agent Inspector</NavLink>
           <NavLink to="/validator">Validator</NavLink>
         </nav>

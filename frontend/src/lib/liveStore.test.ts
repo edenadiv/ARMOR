@@ -196,3 +196,19 @@ describe("metrics & packets frames", () => {
     expect(s.packets[0].kind).toBe("ddos");
   });
 });
+
+describe("baseline frames", () => {
+  it("accumulates a per-segment anti-poisoning baseline series", () => {
+    let s = liveReduce(
+      initialLiveState,
+      frame("baseline", { segment: "public-facing", current: 1000, mean: 800, std: 50, deviation: 4 }, 100),
+    );
+    s = liveReduce(
+      s,
+      frame("baseline", { segment: "public-facing", current: 900, mean: 800, std: 50, deviation: 2 }, 200),
+    );
+    expect(s.baselines["public-facing"]).toHaveLength(2);
+    expect(s.baselines["public-facing"][1].current).toBe(900);
+    expect(s.baselines["public-facing"][1].ts_ms).toBe(200);
+  });
+});

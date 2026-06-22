@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from cdmas.simulator.hosts import HostRegistry
 from cdmas.simulator.topology import NetworkTopology
 from cdmas.validator.scenarios import SCENARIOS
 
@@ -47,6 +48,7 @@ async def build_export() -> dict[str, Any]:
                 "topology": {
                     "segments": [s.value for s in topology.segments],
                     "adjacency": topology.adjacency_view(),
+                    "hosts": HostRegistry().to_view(topology.segments),
                 },
                 "events": [e.model_dump(mode="json") for e in result.events],
                 "metrics": result.metrics.model_dump(mode="json"),

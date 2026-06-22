@@ -75,6 +75,7 @@ function ctx(overrides: Partial<ReplayCtx> = {}): ReplayCtx {
       sendAttack: vi.fn(),
       setRunMode: vi.fn(),
       next: vi.fn(),
+      baselines: {},
     },
     ...overrides,
   };

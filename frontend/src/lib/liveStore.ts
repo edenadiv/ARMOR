@@ -1,7 +1,7 @@
 /* Live store: fold the backend WebSocket frames into the SAME DerivedState the replay
    engine produces, so every panel works in live mode unchanged. Pure reducer — unit-tested. */
 import { type DerivedState, deriveState } from "./replay";
-import type { CdmasEvent, Metrics, SampledPacket, TopologyInfo } from "./types";
+import type { BaselinePoint, CdmasEvent, Metrics, SampledPacket, TopologyInfo } from "./types";
 
 export interface StreamFrame {
   kind: string;
@@ -32,10 +32,12 @@ export interface LiveState {
   sim: SimMode;
   metrics: Metrics | null; // backend-computed; null until the first metrics frame arrives
   packets: SampledPacket[]; // latest round's sampled traffic, for the war-room sprites
+  baselines: Record<string, BaselinePoint[]>; // per-segment anti-poisoning baseline series
   lastTs: number;
 }
 
 const MAX_EVENTS = 3000;
+const BASELINE_WINDOW = 120; // trailing baseline points kept per segment (~the live chart width)
 
 export const initialLiveState: LiveState = {
   events: [],
@@ -44,6 +46,7 @@ export const initialLiveState: LiveState = {
   sim: { mode: "auto", paused: true, awaiting_next: false, round: 0 },
   metrics: null,
   packets: [],
+  baselines: {},
   lastTs: 0,
 };
 
@@ -60,6 +63,7 @@ export function liveReduce(state: LiveState, frame: StreamFrame): LiveState {
         topology: {
           segments: frame.payload.segments ?? [],
           adjacency: frame.payload.adjacency ?? {},
+          hosts: frame.payload.hosts ?? [],
         },
       };
     case "agent_event":
@@ -114,6 +118,23 @@ export function liveReduce(state: LiveState, frame: StreamFrame): LiveState {
     case "packets":
       // Sampled traffic for the war-room sprites (replaced each round; live and bounded).
       return { ...state, packets: (frame.payload.packets ?? []) as SampledPacket[] };
+    case "baseline": {
+      // Per-segment anti-poisoning baseline series (current vs mean +/- std) for the readout.
+      const seg = frame.payload.segment as string | undefined;
+      if (!seg) return state;
+      const pt: BaselinePoint = {
+        ts_ms: frame.ts_ms,
+        current: frame.payload.current ?? 0,
+        mean: frame.payload.mean ?? 0,
+        std: frame.payload.std ?? 0,
+        deviation: frame.payload.deviation ?? 0,
+      };
+      const prev = state.baselines[seg] ?? [];
+      return {
+        ...state,
+        baselines: { ...state.baselines, [seg]: [...prev, pt].slice(-BASELINE_WINDOW) },
+      };
+    }
     default:
       return state;
   }

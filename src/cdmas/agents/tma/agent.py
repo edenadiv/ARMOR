@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from cdmas.agents._common.features import extract_features
 from cdmas.agents.tma.baseline import RollingBaseline
 from cdmas.common.bdi.base_agent import BaseAgent
@@ -40,6 +42,7 @@ class TrafficMonitorAgent(BaseAgent):
         self._last_sampling_ms = -1e9
         self._last_baseline_ms = -1e9
         self._last_alert_ms = -1e9
+        self._last_volume = 0.0  # most recent sampled volume (incl. attack), for the readout
 
     def setup(self) -> None:
         self.goals.add(Goal(description="detect anomalies", priority=1.0))
@@ -57,6 +60,7 @@ class TrafficMonitorAgent(BaseAgent):
         if not pkts:
             return
         volume = sum(p.freq for p in pkts)
+        self._last_volume = volume
         deviation = self.baseline.deviation(volume)
         now = self.now_ms()
         await self._emit_sampling(now)
@@ -82,7 +86,7 @@ class TrafficMonitorAgent(BaseAgent):
             )
         else:
             self.baseline.update(volume)
-            await self._emit_baseline(now)
+            await self._emit_baseline(now, volume)
 
     async def _emit_sampling(self, now: float) -> None:
         if now - self._last_sampling_ms >= _TELEMETRY_INTERVAL_MS:
@@ -92,17 +96,39 @@ class TrafficMonitorAgent(BaseAgent):
                 payload={"signal": "sampling", "sample_rate_hz": 100.0, "segment": self._seg.value},
             )
 
-    async def _emit_baseline(self, now: float) -> None:
+    async def _emit_baseline(self, now: float, current: float) -> None:
         if now - self._last_baseline_ms >= _TELEMETRY_INTERVAL_MS:
             self._last_baseline_ms = now
+            mean = self.baseline.mean
+            std = self.baseline.std
             await self.log_event(
                 EventType.ACTION_EXECUTED,
                 payload={
                     "signal": "baseline_update",
                     "segment": self._seg.value,
-                    "mean": self.baseline.mean,
+                    "current": current,
+                    "mean": mean,
+                    "std": std,
+                    "deviation": (current - mean) / std if std else 0.0,
                 },
             )
+
+    def baseline_snapshot(self) -> dict[str, Any]:
+        """Current volume vs the anti-poisoning baseline (mean ± std) for the live readout.
+
+        Read every round (even during an attack), so the chart shows ``current`` spiking
+        while the oldest-50% band stays flat — the anti-poisoning effect made visible.
+        """
+        mean = self.baseline.mean
+        std = self.baseline.std
+        cur = self._last_volume
+        return {
+            "segment": self._seg.value,
+            "current": cur,
+            "mean": mean,
+            "std": std,
+            "deviation": (cur - mean) / std if std else 0.0,
+        }
 
     async def _publish_alert(self, _agent: BaseAgent) -> None:
         pending = self.beliefs.value("pending_alert")

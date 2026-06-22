@@ -12,13 +12,27 @@ class RollingBaseline:
         self._w: deque[float] = deque(maxlen=window)
         self.warmup = warmup
 
+    def _clean(self) -> list[float]:
+        """The oldest 50% of history, excluding the most-recent sample (anti-poisoning).
+
+        An ongoing attack floods the *recent* end of the window, so reading the baseline
+        from the oldest half keeps mean/std anchored to pre-attack traffic — an attack must
+        run for more than half the window before it can shift its own detection threshold.
+        """
+        w = list(self._w)
+        hist = w[:-1] if len(w) > 1 else w
+        cutoff = max(self.warmup, len(hist) // 2)
+        return hist[:cutoff]
+
     @property
     def mean(self) -> float:
-        return float(np.mean(self._w)) if self._w else 0.0
+        clean = self._clean()
+        return float(np.mean(clean)) if clean else 0.0
 
     @property
     def std(self) -> float:
-        return float(np.std(self._w)) if len(self._w) > 1 else 0.0
+        clean = self._clean()
+        return float(np.std(clean)) if len(clean) > 1 else 0.0
 
     def update(self, x: float) -> None:
         self._w.append(x)

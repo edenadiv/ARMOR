@@ -261,3 +261,21 @@ async def test_overhead_rises_during_incident_then_recovers():
     state = await s.sim.get_state()
     pf = next(x for x in state.segments if x.segment is Segment.PUBLIC_FACING)
     assert pf.active_defenses == []
+
+
+async def test_topology_includes_named_hosts():
+    s = _session()
+    topo = s.topology()
+    assert topo["hosts"]
+    assert all({"hostname", "ip", "segment", "role"} <= set(h.keys()) for h in topo["hosts"])
+
+
+async def test_baseline_frame_streams_per_segment():
+    s = _session()
+    q = s.hub.subscribe()
+    for _ in range(10):
+        await s.tick_round()
+    baseline = [f for f in _drain(q) if f.kind == "baseline"]
+    assert baseline, "expected per-segment anti-poisoning baseline frames"
+    payload = baseline[-1].payload
+    assert {"segment", "current", "mean", "std", "deviation"} <= set(payload.keys())
