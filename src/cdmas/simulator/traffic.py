@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from cdmas.common.models.enums import Segment
+from cdmas.simulator.hosts import HostRegistry
 from cdmas.simulator.packet import Packet
 
 # Default per-segment baseline (mean, std) in packets/sec.
@@ -24,9 +25,11 @@ class TrafficGenerator:
         *,
         seed: int = 0,
         baselines: dict[Segment, tuple[float, float]] | None = None,
+        registry: HostRegistry | None = None,
     ) -> None:
         self._rng = np.random.default_rng(seed)
         self.baselines = baselines if baselines is not None else dict(_DEFAULT_BASELINES)
+        self.registry = registry or HostRegistry()
 
     def baseline(self, segment: Segment) -> tuple[float, float]:
         return self.baselines.get(segment, (400.0, 50.0))
@@ -36,10 +39,14 @@ class TrafficGenerator:
         freqs = self._rng.normal(mean, std, n)
         octets = self._rng.integers(2, 254, n)
         idx = list(Segment).index(segment)
+        seg = segment.value
+        # src stays the diverse synthetic client IP (unique-src COUNT is an ACA feature, so it
+        # must not change); only dst becomes a named server. The frontend resolves both ends to
+        # devices for the Packet-Tracer view. Feature-neutral -> detection/scoring unchanged.
         return [
             Packet(
                 src_ip=f"10.{idx}.0.{int(o)}",
-                dst_ip=f"10.{idx}.0.1",
+                dst_ip=self.registry.target_for(seg, int(o)),
                 port=443,
                 protocol="TCP",
                 pkt_size=512,

@@ -27,6 +27,14 @@ export interface SampledPacket {
   alert_ms: number | null; // wall_ms of the alert this burst triggered
 }
 
+export interface BaselinePoint {
+  ts_ms: number;
+  current: number; // latest sampled volume (spikes during an attack)
+  mean: number; // anti-poisoning baseline mean (oldest-50% of history)
+  std: number;
+  deviation: number; // (current - mean) / std
+}
+
 export interface CdmasEvent {
   event_id: string;
   lamport_ts: number;
@@ -56,9 +64,26 @@ export interface Metrics {
   concurrent_incidents: number;
 }
 
+export interface HostService {
+  port: number;
+  name: string;
+  protocol?: string;
+}
+
+export interface HostInfo {
+  hostname: string;
+  ip: string;
+  segment: string;
+  role: string;
+  os?: string;
+  services?: HostService[];
+  description?: string;
+}
+
 export interface TopologyInfo {
   segments: string[];
   adjacency: Record<string, string[]>;
+  hosts?: HostInfo[]; // named devices per segment (Packet-Tracer view)
 }
 
 export interface ReplayData {

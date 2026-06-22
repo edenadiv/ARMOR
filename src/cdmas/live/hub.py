@@ -21,6 +21,7 @@ KIND_CONNECTION_STATUS = "connection_status"
 KIND_SIMULATION_STATE = "simulation_state"
 KIND_METRICS = "metrics"
 KIND_PACKETS = "packets"
+KIND_BASELINE = "baseline"
 
 
 class StreamFrame(BaseModel):

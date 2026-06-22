@@ -1,6 +1,16 @@
 from cdmas.common.models.enums import AttackType, Segment
 from cdmas.simulator.attacks import AttackInjector, AttackSpec
+from cdmas.simulator.hosts import HostRegistry
 from cdmas.simulator.topology import NetworkTopology
+
+
+def test_attack_dst_is_a_named_host():
+    inj = AttackInjector(seed=1)
+    inj.inject(AttackSpec(type=AttackType.DDOS, segment=Segment.PUBLIC_FACING, intensity=2.0))
+    pkts = inj.overlay(Segment.PUBLIC_FACING, now_ms=0)
+    pf_ips = {h.ip for h in HostRegistry().hosts_in("public-facing")}
+    assert pkts and all(p.dst_ip in pf_ips for p in pkts)  # attack targets a named device
+    assert all(p.src_ip.startswith("203.0.") for p in pkts)  # attacker src signature unchanged
 
 
 def test_ddos_raises_volume_and_randomizes_ips():
@@ -22,13 +32,15 @@ def test_port_scan_touches_distinct_ports_in_varied_order():
 
 def test_lateral_only_to_adjacent_segments():
     topo = NetworkTopology()
-    inj = AttackInjector(seed=1, topology=topo)
+    reg = HostRegistry()
+    inj = AttackInjector(seed=1, topology=topo, registry=reg)
     inj.inject(AttackSpec(type=AttackType.LATERAL, segment=Segment.INTERNAL))
     pkts = inj.overlay(Segment.INTERNAL, now_ms=0)
-    neighbor_idx = {list(Segment).index(n) for n in topo.neighbors(Segment.INTERNAL)}
+    neighbor_segs = {n.value for n in topo.neighbors(Segment.INTERNAL)}
     assert pkts
     for p in pkts:
-        assert int(p.dst_ip.split(".")[1]) in neighbor_idx
+        host = reg.get_host(p.dst_ip)  # dst now resolves to a named device in a neighbor segment
+        assert host is not None and host.segment in neighbor_segs
 
 
 def test_zero_day_is_out_of_distribution():

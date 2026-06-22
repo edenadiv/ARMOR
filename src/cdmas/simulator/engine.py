@@ -11,6 +11,7 @@ from cdmas.common.models.enums import ResourceType, ResponseType, Segment
 from cdmas.common.timing.clock import Clock
 from cdmas.simulator.attacks import AttackInjector, AttackSpec, GroundTruth
 from cdmas.simulator.clock import SimClock
+from cdmas.simulator.hosts import HostRegistry
 from cdmas.simulator.models import (
     ActionRequest,
     ActionResult,
@@ -54,8 +55,9 @@ class InProcessSimulator:
         self.segments = segments if segments is not None else list(Segment)
         self.topology = NetworkTopology(self.segments)
         self.simclock = SimClock(clock, speed=speed, tick_ms=tick_ms)
-        self.traffic = TrafficGenerator(seed=seed)
-        self.injector = AttackInjector(seed=seed + 1, topology=self.topology)
+        self.hosts = HostRegistry()  # shared device model (traffic + attacks resolve dst hosts)
+        self.traffic = TrafficGenerator(seed=seed, registry=self.hosts)
+        self.injector = AttackInjector(seed=seed + 1, topology=self.topology, registry=self.hosts)
         self.state = StateManager(self.topology)
         self.resources = resource_pool or ResourcePool()
         self.sampler = sampler  # optional dashboard packet capture (validator path only)

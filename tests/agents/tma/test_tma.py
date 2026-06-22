@@ -52,3 +52,25 @@ async def test_tma_alert_latency_under_100ms():
     alerts = [e for e in tma.sink.events if e.event_type is EventType.ALERT_PUBLISHED]
     assert alerts
     assert alerts[-1].latency_ms is not None and alerts[-1].latency_ms < 100
+
+
+async def test_baseline_update_emits_mean_and_std():
+    clk = ManualClock()
+    sim = InProcessSimulator(clock=clk, segments=[Segment.PUBLIC_FACING], seed=0)
+    bus = InMemoryBus()
+    tma = TrafficMonitorAgent("TMA:seg1", "public-facing", bus, sim, clock=clk)
+    tma.setup()
+    for _ in range(10):  # normal traffic -> baseline_update telemetry fires
+        sim.tick()
+        await tma.step()
+        clk.advance(10)
+    baseline = [
+        e
+        for e in tma.sink.events
+        if e.event_type is EventType.ACTION_EXECUTED
+        and e.payload.get("signal") == "baseline_update"
+    ]
+    assert baseline, "expected baseline_update telemetry"
+    payload = baseline[-1].payload
+    # std is now emitted alongside mean so the UI can draw the baseline +/- std band.
+    assert "mean" in payload and "std" in payload

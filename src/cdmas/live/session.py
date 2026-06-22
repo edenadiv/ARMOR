@@ -14,6 +14,7 @@ from collections import deque
 from typing import Any
 
 from cdmas.agents.factory import build_all
+from cdmas.agents.tma.agent import TrafficMonitorAgent
 from cdmas.analytics.metrics import compute_metrics
 from cdmas.common.bdi.base_agent import BaseAgent
 from cdmas.common.logging.event_log import EventLog, EventSink
@@ -22,6 +23,7 @@ from cdmas.common.models.enums import AttackType, Segment
 from cdmas.common.timing.clock import ManualClock
 from cdmas.coordination.failure import HeartbeatMonitor
 from cdmas.live.hub import (
+    KIND_BASELINE,
     KIND_CONNECTION_STATUS,
     KIND_METRICS,
     KIND_PACKETS,
@@ -173,6 +175,7 @@ class LiveSession:
         return {
             "segments": [s.value for s in self.segments],
             "adjacency": self.sim.topology.adjacency_view(),
+            "hosts": self.sim.hosts.to_view(self.segments),
         }
 
     def emit_status(self) -> None:
@@ -256,6 +259,11 @@ class LiveSession:
         if packets:
             self.hub.publish(KIND_PACKETS, {"packets": packets}, ts_ms=now)
         self.sampler.reset()
+        # Per-segment anti-poisoning baseline (current vs mean +/- std), emitted every round —
+        # even during an attack — so the readout shows current spiking while the band holds.
+        for agent in self.agents:
+            if isinstance(agent, TrafficMonitorAgent):
+                self.hub.publish(KIND_BASELINE, agent.baseline_snapshot(), ts_ms=now)
 
     async def run(self, *, interval_s: float = _INTERVAL_S) -> None:
         self._running = True

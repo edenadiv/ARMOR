@@ -15,6 +15,7 @@ import type { ExportBundle, ExportData } from "./lib/types";
 import { useLiveConnection } from "./lib/useLiveConnection";
 import { Dashboard } from "./pages/Dashboard";
 import { Inspector } from "./pages/Inspector";
+import { Network } from "./pages/Network";
 import { Validator } from "./pages/Validator";
 
 const bundle = rawData as unknown as ExportBundle;
@@ -301,6 +302,7 @@ export default function App() {
           sendAttack: liveConn.sendAttack,
           setRunMode: liveConn.setRunMode,
           next: liveConn.next,
+          baselines: liveState.baselines,
         },
       }}
     >
@@ -310,6 +312,7 @@ export default function App() {
         <div className="content">
           <Routes>
             <Route path="/" element={<Dashboard />} />
+            <Route path="/network" element={<Network />} />
             <Route path="/inspector" element={<Inspector />} />
             <Route path="/validator" element={<Validator />} />
           </Routes>

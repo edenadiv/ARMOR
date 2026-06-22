@@ -6,6 +6,7 @@ import numpy as np
 from pydantic import BaseModel, Field
 
 from cdmas.common.models.enums import AttackType, Segment
+from cdmas.simulator.hosts import HostRegistry
 from cdmas.simulator.packet import Packet
 from cdmas.simulator.topology import NetworkTopology
 
@@ -37,10 +38,17 @@ def _active(spec: AttackSpec, segment: Segment | None, ts_ms: float) -> bool:
 
 
 class AttackInjector:
-    def __init__(self, *, seed: int = 0, topology: NetworkTopology | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        seed: int = 0,
+        topology: NetworkTopology | None = None,
+        registry: HostRegistry | None = None,
+    ) -> None:
         self._rng = np.random.default_rng(seed)
         self._specs: list[AttackSpec] = []
         self._topology = topology
+        self._registry = registry or HostRegistry()
 
     def inject(self, spec: AttackSpec) -> None:
         self._specs.append(spec)
@@ -76,6 +84,7 @@ class AttackInjector:
     def _packets_for(
         self, spec: AttackSpec, segment: Segment, idx: int, now_ms: float
     ) -> list[Packet]:
+        target = self._registry.primary_target(segment.value)  # named device the attack hits
         if spec.type in (AttackType.DDOS, AttackType.VOLUME_SPIKE):
             count = max(20, int(spec.intensity * 20))
             pkts = []
@@ -85,7 +94,7 @@ class AttackInjector:
                 pkts.append(
                     Packet(
                         src_ip=f"203.0.{o1}.{o2}",
-                        dst_ip=f"10.{idx}.0.1",
+                        dst_ip=target,
                         port=443,
                         pkt_size=512,
                         freq=5000.0 * spec.intensity,
@@ -98,7 +107,7 @@ class AttackInjector:
             return [
                 Packet(
                     src_ip="198.51.100.7",
-                    dst_ip=f"10.{idx}.0.1",
+                    dst_ip=target,
                     port=int(p),
                     pkt_size=64,
                     freq=2.0,
@@ -114,11 +123,10 @@ class AttackInjector:
             pkts = []
             for i in range(count):
                 nb = neighbors[i % len(neighbors)]
-                nidx = list(Segment).index(nb)
                 pkts.append(
                     Packet(
                         src_ip=f"10.{idx}.0.5",
-                        dst_ip=f"10.{nidx}.0.9",
+                        dst_ip=self._registry.primary_target(nb.value),
                         port=445,
                         pkt_size=256,
                         freq=300.0,
@@ -131,7 +139,7 @@ class AttackInjector:
             return [
                 Packet(
                     src_ip="192.0.2.66",
-                    dst_ip=f"10.{idx}.0.1",
+                    dst_ip=target,
                     port=31337,
                     protocol="UDP",
                     pkt_size=9000,
