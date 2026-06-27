@@ -34,7 +34,7 @@ from core.messages import Message, Performative, Topic
 
 logger = logging.getLogger(__name__)
 
-MODEL_PATH = Path(__file__).parent / "aca_model.pkl"
+MODEL_PATH = Path(__file__).resolve().parent.parent / "models" / "aca_model.pkl"
 
 # Layer-1 filter thresholds
 NOISE_MAX_DEVIATION  = 4.0   # sigma — below this AND no history → noise

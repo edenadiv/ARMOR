@@ -33,6 +33,7 @@ Run once before the ACA:
 from __future__ import annotations
 import asyncio
 import pickle
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,6 +42,12 @@ import numpy as np
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
+
+# Ensure intra-backend imports (bus/core/simulation/agents) resolve whether
+# this module is run as `python -m agents.aca_trainer` or `python -m backend.agents.aca_trainer`.
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(BACKEND_ROOT))
 
 from bus.message_bus import MessageBus
 from core.messages import Topic
@@ -51,7 +58,7 @@ from simulation.traffic import TrafficGenerator
 from simulation.attackers import DDoSAttacker, PortScanner
 from agents.tma import TrafficMonitorAgent
 
-MODEL_PATH = Path(__file__).parent / "aca_model.pkl"
+MODEL_PATH = Path(__file__).resolve().parent.parent / "models" / "aca_model.pkl"
 
 FEATURE_NAMES = [
     "anomaly_type_enc",     # 0 = VOLUME_SPIKE,  1 = PORT_SCAN
@@ -316,6 +323,7 @@ async def generate_and_train(n_seeds: int = 6) -> None:
         bar = "#" * int(imp * 40)
         print(f"    {name:22s}  {imp:.3f}  {bar}")
 
+    MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(MODEL_PATH, "wb") as f:
         pickle.dump({"model": clf, "features": FEATURE_NAMES,
                      "labels": LABEL_NAMES}, f)

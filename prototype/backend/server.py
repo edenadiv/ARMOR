@@ -16,6 +16,7 @@ import asyncio
 import json
 import logging
 import pathlib
+import sys
 import time
 from collections import deque
 from contextlib import asynccontextmanager
@@ -23,6 +24,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+
+# Ensure intra-backend imports (bus/core/simulation/agents) resolve whether
+# this module is loaded as `server` or `backend.server`.
+BACKEND_ROOT = pathlib.Path(__file__).resolve().parent
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(BACKEND_ROOT))
 
 from bus.message_bus import MessageBus
 from simulation.clock import SimClock
@@ -43,17 +50,17 @@ FRONTEND = pathlib.Path(__file__).parent / "frontend" / "index.html"
 
 # ── Segment + scenario metadata ────────────────────────────────────────────────
 SEGMENTS = [
-    {"id": "public-facing", "code": "PUB", "name": "Public-Facing DMZ",  "cidr": "203.0.113.0/24"},
-    {"id": "server",        "code": "SRV", "name": "Server Zone",         "cidr": "10.10.20.0/24"},
-    {"id": "internal",      "code": "INT", "name": "Internal Subnet",     "cidr": "10.10.30.0/24"},
-    {"id": "sec-mon",       "code": "MON", "name": "Security Monitoring", "cidr": "10.10.99.0/24"},
+    {"id": "public-facing", "code": "PUB", "name": "Public-Facing Services", "cidr": "172.16.0.0/24"},
+    {"id": "server",        "code": "SRV", "name": "Server Zone",            "cidr": "10.0.2.0/24"},
+    {"id": "internal",      "code": "INT", "name": "Internal User Subnet",   "cidr": "10.0.1.0/24"},
+    {"id": "sec-mon",       "code": "MON", "name": "Security Monitoring Zone","cidr": "10.0.3.0/24"},
 ]
 SEG_MAP = {s["id"]: s for s in SEGMENTS}
 
 SCENARIOS = {
     "calm":  {"label": "Calm Baseline"},
-    "ddos":  {"label": "Single DDoS"},
-    "multi": {"label": "Multi-Segment"},
+    "ddos":  {"label": "DDoS Attack"},
+    "scan":  {"label": "Port Scan"},
 }
 
 # BDI desires per agent type — used in the inspector panel
@@ -96,6 +103,16 @@ AGENT_PLANS = {
     ("RAA", "idle"):  "idle",
 }
 
+# Agent recipients per topic for visualization (current runtime wiring).
+VIZ_TOPIC_RECIPIENTS = {
+    Topic.ALERTS:         ["ACA:1"],
+    Topic.THREAT_REPORTS: ["RCA:1", "TIA:1"],
+    Topic.THREAT_INTEL:   ["RCA:1"],
+    Topic.COALITION:      ["TIA:1"],
+    Topic.RESOLUTION:     ["RAA:1"],
+    Topic.RESOURCE_GRANTS: [],
+}
+
 
 # ── StateCollector: observes the bus and builds display state ──────────────────
 class StateCollector:
@@ -108,6 +125,8 @@ class StateCollector:
         self._start = time.monotonic()
         self.lamport = 0
         self.logs: deque = deque(maxlen=50)
+        self.viz_events: deque = deque(maxlen=400)
+        self._viz_seq = 0
 
         # Metric counters
         self.tp = 0   # confirmed threats classified
@@ -173,11 +192,36 @@ class StateCollector:
             {"time": self._now(), "text": text}
         )
 
+    def _emit_viz_event(self, msg: Message):
+        c = msg.content
+        if msg.receiver and msg.receiver != "BROADCAST":
+            targets = [r.strip() for r in msg.receiver.split(",") if r.strip()]
+        else:
+            targets = VIZ_TOPIC_RECIPIENTS.get(msg.topic, [])
+        targets = [t for t in targets if t != msg.sender]
+
+        self._viz_seq += 1
+        self.viz_events.append({
+            "id": self._viz_seq,
+            "topic": msg.topic,
+            "sender": msg.sender,
+            "receiver": msg.receiver,
+            "targets": targets,
+            "segment": c.get("segment") or c.get("primary_segment"),
+            "anomaly_type": c.get("anomaly_type"),
+            "classification": c.get("classification"),
+            "pattern_type": c.get("pattern_type"),
+            "action": c.get("action") or c.get("proposed_action"),
+            "severity": c.get("severity", 0.0),
+            "at": round(self.elapsed(), 3),
+        })
+
     # ------------------------------------------------------------------
     # Bus handlers (each is an async callback)
     # ------------------------------------------------------------------
 
     async def _on_alert(self, msg: Message):
+        self._emit_viz_event(msg)
         c     = msg.content
         seg   = c.get("segment", "")
         atype = c.get("anomaly_type", "")
@@ -191,6 +235,7 @@ class StateCollector:
                   f"Alert — {atype.lower().replace('_', ' ')} on {name} ({dev:+.1f}σ)")
 
     async def _on_threat_report(self, msg: Message):
+        self._emit_viz_event(msg)
         c    = msg.content
         clf  = c.get("classification", "")
         sev  = c.get("severity", 0.0)
@@ -216,6 +261,7 @@ class StateCollector:
             self.fp += 1
 
     async def _on_threat_intel(self, msg: Message):
+        self._emit_viz_event(msg)
         c       = msg.content
         pattern = c.get("pattern_type", "")
         seg     = c.get("primary_segment", "")
@@ -235,6 +281,7 @@ class StateCollector:
             self._log("TIA-1", "#3fa3a8", f"{name} ranked highest-priority threat")
 
     async def _on_coalition(self, msg: Message):
+        self._emit_viz_event(msg)
         c      = msg.content
         inc_id = c.get("incident_id", "")
         seg    = c.get("segment", "")
@@ -251,6 +298,7 @@ class StateCollector:
                   f"Coalition vote — {action.lower().replace('_', ' ')} for {name}")
 
     async def _on_resolution(self, msg: Message):
+        self._emit_viz_event(msg)
         c       = msg.content
         inc_id  = c.get("incident_id", "")
         outcome = c.get("outcome", "")
@@ -289,6 +337,7 @@ class StateCollector:
             self._trace("RCA:1", f"{action} REJECTED for {name}")
 
     async def _on_grant(self, msg: Message):
+        self._emit_viz_event(msg)
         c       = msg.content
         outcome = c.get("outcome", "")
         res     = c.get("resource_type", "")
@@ -314,6 +363,8 @@ class StateCollector:
         self._start = time.monotonic()
         self.lamport = 0
         self.logs.clear()
+        self.viz_events.clear()
+        self._viz_seq = 0
         self.tp = self.fp = 0
         self.mttr_ms.clear()
         self._disruption_start = None
@@ -378,6 +429,7 @@ class StateCollector:
             stats = gen.get_stats(sid)
             pps   = stats.current_pps
             dev   = stats.deviation
+            hosts = sorted(gen.topology.hosts_in(sid), key=lambda h: h.hostname)
 
             if sid in self.quarantined_segs:
                 health = "QUARANTINED"
@@ -397,6 +449,10 @@ class StateCollector:
                 "hist":        [round(v, 1) for v in self.bw_hist.get(sid, [])],
                 "quarantined": sid in self.quarantined_segs,
                 "attack_pps":  round(gen.get_attack_pps(sid), 1),
+                "hosts": [
+                    {"hostname": h.hostname, "ip": h.ip, "role": h.role}
+                    for h in hosts
+                ],
             }
 
         # ── Agents ────────────────────────────────────────────────────
@@ -445,6 +501,7 @@ class StateCollector:
             "segments":         segs_out,
             "agents":           agents_out,
             "logs":             list(self.logs),
+            "viz_events":       list(self.viz_events),
             "metrics":          m,
             "blocked_ips":      list(self.blocked_ips),
             "quarantined_segs": list(self.quarantined_segs),
@@ -548,6 +605,7 @@ class SimEngine:
         self.clock = SimClock()
         self.topo  = NetworkTopology()
         self.gen   = TrafficGenerator(self.topo, self.clock)
+        await self.bus.start()
 
         # Agents
         self.tma = TrafficMonitorAgent("TMA:1", self.bus, self.gen)
@@ -589,6 +647,8 @@ class SimEngine:
         for agent in [self.tma, self.aca, self.rca, self.tia, self.raa]:
             if agent:
                 await agent.stop()
+        if self.bus:
+            await self.bus.stop()
         logger.info("SimEngine stopped")
 
     # ------------------------------------------------------------------
@@ -602,37 +662,28 @@ class SimEngine:
 
     async def set_scenario(self, name: str):
         """Switch to a new scenario: stop current attackers, start new ones."""
+        if name not in SCENARIOS:
+            name = "calm"
+
         self._stop_attackers()
         self.sc.reset()
         self.scenario = name
 
         if name == "ddos":
-            # Single DDoS against public-facing (6× baseline, ramp 3 s, lasts forever)
+            # DDoS attack against public-facing segment.
             atk = DDoSAttacker(
                 "DDoS:1", "public-facing", self.gen,
                 intensity_multiplier=6.0, ramp_seconds=3.0,
             )
             self._atk_tasks.append(asyncio.create_task(atk.launch(duration=3600)))
 
-        elif name == "multi":
-            # DDoS on public-facing + port scan across server and internal
-            ddos = DDoSAttacker(
-                "DDoS:1", "public-facing", self.gen,
-                intensity_multiplier=6.0, ramp_seconds=3.0,
-            )
+        elif name == "scan":
+            # Port scan against server segment.
             scanner = PortScanner(
                 "Scan:1", "server", self.gen,
                 src_ip="45.33.32.156", probe_interval=0.3,
             )
-            scanner2 = PortScanner(
-                "Scan:2", "internal", self.gen,
-                src_ip="45.33.32.156", probe_interval=0.5,
-            )
-            self._atk_tasks += [
-                asyncio.create_task(ddos.launch(duration=3600)),
-                asyncio.create_task(scanner.launch(duration=3600)),
-                asyncio.create_task(scanner2.launch(duration=3600)),
-            ]
+            self._atk_tasks.append(asyncio.create_task(scanner.launch(duration=3600)))
         # "calm" → no attackers, already stopped above
 
     def snapshot(self) -> dict:
@@ -648,7 +699,7 @@ ws_clients: list[WebSocket] = []
 async def lifespan(app: FastAPI):
     await engine.start()
     # Seed the default scenario so there is something to see immediately
-    await engine.set_scenario("ddos")
+    await engine.set_scenario("calm")
     asyncio.create_task(_broadcast_loop())
     yield
     await engine.stop()
@@ -673,13 +724,14 @@ async def _broadcast_loop():
             logger.error("snapshot error: %s", exc)
             continue
         dead = []
-        for ws in ws_clients:
+        for ws in list(ws_clients):
             try:
                 await ws.send_text(payload)
             except Exception:
                 dead.append(ws)
         for ws in dead:
-            ws_clients.remove(ws)
+            if ws in ws_clients:
+                ws_clients.remove(ws)
 
 
 @app.get("/")
