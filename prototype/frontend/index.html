@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cyber-Defense MAS · Live Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; background: #eaedf1; font-family: 'IBM Plex Mono', monospace; color: #3a4452; }
+    ::-webkit-scrollbar { width: 7px; height: 7px; }
+    ::-webkit-scrollbar-thumb { background: #d2d8df; border-radius: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    @keyframes pulseGlow { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #root { min-height: 100%; }
+    button { font-family: inherit; cursor: pointer; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+const WS_URL = `ws://${location.host}/ws`;
+
+const C = {
+  idle: '#b3bcc6', mon: '#4a9e7f', active: '#4577b5', alert: '#d9a23f', down: '#cf6b5e',
+  green: '#4a9e7f', red: '#cf6b5e', amber: '#d9a23f', orange: '#d97a3c',
+  purple: '#7b6fc4', teal: '#3fa3a8', blue: '#4577b5',
+};
+
+// Network topology fixed geometry (matches mockup)
+const POS = {
+  attacker: { x: 140, y: 120 }, edge: { x: 140, y: 330 }, core: { x: 430, y: 330 },
+  tma:      { x: 430, y: 500 },
+  A: { x: 770, y: 205 }, B: { x: 1010, y: 205 },
+  C: { x: 770, y: 335 }, D: { x: 1010, y: 335 },
+  E: { x: 770, y: 465 },
+  aca1: { x: 226, y: 605 }, tia1: { x: 486, y: 605 },
+  rca1: { x: 716, y: 605 }, raa1: { x: 966, y: 605 }, aca2: { x: 1166, y: 605 },
+};
+
+// Per-segment host definitions  (slot A-E)
+const SEGDATA = {
+  'public-facing': {
+    edge: 'gw-pub.acme.net', edgeIp: '203.0.113.1', core: 'sw-pub.acme.net',
+    slots: {
+      A: { name: 'Load Balancer', host: 'lb01.acme.net',  ip: '203.0.113.5' },
+      B: { name: 'Web Server',   host: 'web01.acme.net', ip: '203.0.113.10' },
+      C: { name: 'Web Server',   host: 'web02.acme.net', ip: '203.0.113.11' },
+      D: { name: 'DNS Server',   host: 'dns01.acme.net', ip: '203.0.113.53' },
+      E: { name: 'Mail Gateway', host: 'mail01.acme.net',ip: '203.0.113.25' },
+    },
+  },
+  server: {
+    edge: 'gw-srv.acme.net', edgeIp: '10.10.20.1', core: 'sw-srv.acme.net',
+    slots: {
+      A: { name: 'App Server', host: 'app01.acme.net', ip: '10.10.20.10' },
+      B: { name: 'App Server', host: 'app02.acme.net', ip: '10.10.20.11' },
+      C: { name: 'DB Primary', host: 'db01.acme.net',  ip: '10.10.20.20' },
+      D: { name: 'DB Replica', host: 'db02.acme.net',  ip: '10.10.20.21' },
+      E: { name: 'Cache',      host: 'redis01.acme.net',ip:'10.10.20.30' },
+    },
+  },
+  internal: {
+    edge: 'gw-int.acme.net', edgeIp: '10.10.30.1', core: 'sw-int.acme.net',
+    slots: {
+      A: { name: 'Directory',   host: 'dc01.acme.net', ip: '10.10.30.5'  },
+      B: { name: 'File Server', host: 'fs01.acme.net', ip: '10.10.30.10' },
+      C: { name: 'Workstation', host: 'ws01.acme.net', ip: '10.10.30.50' },
+      D: { name: 'Workstation', host: 'ws02.acme.net', ip: '10.10.30.51' },
+      E: { name: 'Print Server',host: 'pr01.acme.net', ip: '10.10.30.15' },
+    },
+  },
+  'sec-mon': {
+    edge: 'gw-mon.acme.net', edgeIp: '10.10.99.1', core: 'sw-mon.acme.net',
+    slots: {
+      A: { name: 'SIEM',          host: 'siem01.acme.net', ip: '10.10.99.10' },
+      B: { name: 'IDS Sensor',    host: 'ids01.acme.net',  ip: '10.10.99.20' },
+      C: { name: 'Log Collector', host: 'log01.acme.net',  ip: '10.10.99.30' },
+      D: { name: 'Threat Feed',   host: 'feed01.acme.net', ip: '10.10.99.40' },
+      E: { name: 'PCAP Store',    host: 'pcap01.acme.net', ip: '10.10.99.50' },
+    },
+  },
+};
+
+const HOSTLEFT = { A: 664, B: 904, C: 664, D: 904, E: 664 };
+const HOSTTOP  = { A: 172, B: 172, C: 302, D: 302, E: 432 };
+
+const SEGMENTS = [
+  { id: 'public-facing', code: 'PUB', name: 'Public-Facing DMZ',  cidr: '203.0.113.0/24' },
+  { id: 'server',        code: 'SRV', name: 'Server Zone',         cidr: '10.10.20.0/24'  },
+  { id: 'internal',      code: 'INT', name: 'Internal Subnet',     cidr: '10.10.30.0/24'  },
+  { id: 'sec-mon',       code: 'MON', name: 'Security Monitoring', cidr: '10.10.99.0/24'  },
+];
+
+const SCENARIOS = [
+  { id: 'calm',  label: 'Calm Baseline' },
+  { id: 'ddos',  label: 'Single DDoS'   },
+  { id: 'multi', label: 'Multi-Segment' },
+];
+
+const BUS_AGENTS = [
+  { id: 'ACA:1', code: 'ACA-1', role: 'Anomaly Classifier', accent: C.red    },
+  { id: 'TIA:1', code: 'TIA-1', role: 'Threat Intelligence',accent: C.teal   },
+  { id: 'RCA:1', code: 'RCA-1', role: 'Response Coordinator',accent: C.blue  },
+  { id: 'RAA:1', code: 'RAA-1', role: 'Resource Allocator', accent: C.purple },
+];
+
+const LEGEND = [
+  { color: C.green,  label: 'NORMAL' },
+  { color: C.amber,  label: 'ANOMALY' },
+  { color: C.red,    label: 'CONFIRMED THREAT' },
+  { color: '#8b5cf6',label: 'QUARANTINED' },
+  { color: C.blue,   label: 'ACTIVE AGENT' },
+  { color: C.idle,   label: 'IDLE AGENT' },
+];
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function stateColor(st) {
+  return { alert: C.amber, active: C.blue, mon: C.green, idle: C.idle, down: C.red }[st] || C.idle;
+}
+
+function healthColor(health) {
+  return { NORMAL: C.green, ANOMALY: C.amber, THREAT: C.red, QUARANTINED: '#8b5cf6' }[health] || C.green;
+}
+
+function healthBorder(health) {
+  return { NORMAL: '#e6eaee', ANOMALY: '#e7c070', THREAT: '#e7b6b0', QUARANTINED: '#c4b5fd' }[health] || '#e6eaee';
+}
+
+function fmt(t) {
+  const m = Math.floor(t / 60), s = Math.floor(t % 60);
+  return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function buildLinePath(vals, W, H, peak) {
+  if (!vals || vals.length < 2) return '';
+  const step = W / (vals.length - 1);
+  return vals.map((v, i) => {
+    const x = i * step;
+    const y = H - (v / peak) * (H - 4);
+    return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+}
+
+function buildAreaPath(vals, W, H, peak) {
+  if (!vals || vals.length < 2) return '';
+  const step = W / (vals.length - 1);
+  const top = vals.map((v, i) => {
+    const x = i * step;
+    const y = H - (v / peak) * (H - 4);
+    return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  return `${top} L${W},${H} L0,${H} Z`;
+}
+
+// ─── Packet animation engine (pure canvas, no React re-render) ────────────────
+function usePacketCanvas(canvasRef, simState) {
+  const animRef   = useRef(null);
+  const packetsRef = useRef([]);
+  const busRef     = useRef([]);
+  const lastRef    = useRef(0);
+  const spawnAccRef = useRef(0);
+  const busAccRef   = useRef(0);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    canvas.width  = 1180 * dpr;
+    canvas.height = 700  * dpr;
+    canvas.style.width  = '1180px';
+    canvas.style.height = '700px';
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    function ptAt(path, seg, t) {
+      const a = POS[path[seg]], b = POS[path[seg + 1]];
+      if (!a || !b) return null;
+      return { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) };
+    }
+
+    function spawnPacket(attacked, mitigated) {
+      const red = attacked && Math.random() < (mitigated ? 0.15 : 0.5);
+      const slotKeys = ['A', 'B', 'C', 'D', 'E'];
+      const slot = slotKeys[Math.floor(Math.random() * slotKeys.length)];
+      const origin = (red || Math.random() < 0.5) ? 'attacker' : 'edge';
+      const path = origin === 'attacker'
+        ? ['attacker', 'edge', 'core', slot]
+        : ['edge', 'core', slot];
+      packetsRef.current.push({
+        path, seg: 0, t: 0,
+        speed: 0.018 + Math.random() * 0.014,
+        color: red ? C.red : C.green,
+      });
+    }
+
+    function spawnBusMsg(attacked) {
+      const types = attacked
+        ? ['alert', 'threat', 'coalition', 'resolution']
+        : ['intel', 'alert'];
+      const type = types[Math.floor(Math.random() * types.length)];
+      const colors = { alert: C.amber, threat: C.red, coalition: C.blue,
+                       resolution: C.green, intel: C.teal };
+      // pick two adjacent bus agent positions
+      const agents = ['aca1','tia1','rca1','raa1'];
+      const fromIdx = Math.floor(Math.random() * (agents.length - 1));
+      busRef.current.push({
+        from: agents[fromIdx], to: agents[fromIdx + 1],
+        t: 0, speed: 0.04 + Math.random() * 0.03,
+        color: colors[type] || C.blue,
+      });
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, 1180, 700);
+
+      // Draw packets (network traffic)
+      packetsRef.current.forEach(p => {
+        const pos = ptAt(p.path, p.seg, p.t);
+        if (!pos) return;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, 3, 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = 0.85;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      });
+
+      // Draw bus messages
+      busRef.current.forEach(m => {
+        const a = POS[m.from], b = POS[m.to];
+        if (!a || !b) return;
+        const pos = { x: lerp(a.x, b.x, m.t), y: lerp(a.y, b.y, m.t) };
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = m.color;
+        ctx.globalAlpha = 0.9;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      });
+    }
+
+    function loop(ts) {
+      const dt = Math.min(3, (ts - lastRef.current) / 16.67);
+      lastRef.current = ts;
+
+      const attacked  = simState.current?.attackedSegs?.length > 0;
+      const mitigated = simState.current?.mitigated;
+      const running   = simState.current?.running !== false;
+
+      if (running) {
+        spawnAccRef.current += dt;
+        const every = attacked ? 5 : 12;
+        while (spawnAccRef.current >= every) {
+          spawnAccRef.current -= every;
+          spawnPacket(attacked, mitigated);
+        }
+
+        busAccRef.current += dt;
+        const busEvery = attacked ? 18 : 80;
+        while (busAccRef.current >= busEvery) {
+          busAccRef.current -= busEvery;
+          spawnBusMsg(attacked);
+        }
+
+        // Advance packet positions
+        packetsRef.current.forEach(p => {
+          p.t += p.speed * dt;
+          while (p.t >= 1 && p.seg < p.path.length - 2) { p.seg++; p.t -= 1; }
+        });
+        packetsRef.current = packetsRef.current.filter(
+          p => !(p.t >= 1 && p.seg >= p.path.length - 2)
+        );
+        if (packetsRef.current.length > 80)
+          packetsRef.current.splice(0, packetsRef.current.length - 80);
+
+        // Advance bus messages
+        busRef.current.forEach(m => { m.t += m.speed * dt; });
+        busRef.current = busRef.current.filter(m => m.t < 1);
+      }
+
+      draw();
+      animRef.current = requestAnimationFrame(loop);
+    }
+
+    animRef.current = requestAnimationFrame(loop);
+    return () => { if (animRef.current) cancelAnimationFrame(animRef.current); };
+  }, []);
+}
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+// Sparkline chart for bandwidth panel
+function Sparkline({ hist, baseline, health, W = 320, H = 46 }) {
+  const peak = useMemo(() => {
+    const max = Math.max(...(hist || [baseline * 2]), baseline * 2);
+    return max * 1.1;
+  }, [hist, baseline]);
+
+  const baseY = useMemo(() => H - (baseline / peak) * (H - 4), [baseline, peak, H]);
+  const lineColor = healthColor(health);
+  const areaFill  = health === 'NORMAL' ? 'rgba(74,158,127,.12)' :
+                    health === 'ANOMALY' ? 'rgba(217,162,63,.15)' :
+                    health === 'THREAT'  ? 'rgba(207,107,94,.15)' : 'rgba(139,92,246,.15)';
+
+  const linePath = buildLinePath(hist, W, H, peak);
+  const areaPath = buildAreaPath(hist, W, H, peak);
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" width="100%" height={H} style={{ display: 'block' }}>
+      <line x1="0" y1={baseY} x2={W} y2={baseY} stroke="#d6dce2" strokeWidth="1" strokeDasharray="3 4" />
+      <path d={areaPath} fill={areaFill} stroke="none" />
+      <path d={linePath} fill="none" stroke={lineColor} strokeWidth="1.6" />
+    </svg>
+  );
+}
+
+// Agent inspector drawer (slides in from the right)
+function AgentInspector({ agent, onClose }) {
+  if (!agent) return null;
+  const sc = stateColor(agent.state);
+  const pct = Math.max(5, Math.min(100, (agent.budget - 20) / agent.budget * 100));
+
+  return (
+    <div style={{
+      position: 'fixed', right: 0, top: 0, width: 420, height: '100%',
+      background: '#fff', borderLeft: '1px solid #dde3e9', zIndex: 50,
+      display: 'flex', flexDirection: 'column',
+      boxShadow: '-20px 0 50px rgba(40,55,75,.12)',
+    }}>
+      {/* Header */}
+      <div style={{ height: 56, flexShrink: 0, display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between', padding: '0 18px', borderBottom: '1px solid #e2e7ec' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ width: 9, height: 9, borderRadius: '50%', background: sc, flexShrink: 0 }} />
+          <div style={{ lineHeight: 1.25 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#2b3440' }}>{agent.code}</div>
+            <div style={{ fontSize: 9, letterSpacing: '.07em', color: '#9aa4b0' }}>
+              {agent.typeName} · {agent.seg}
+            </div>
+          </div>
+        </div>
+        <button onClick={onClose} style={{
+          fontSize: 15, width: 28, height: 28, borderRadius: 6,
+          background: '#f3f5f7', border: '1px solid #e2e7ec', color: '#7c8794',
+        }}>×</button>
+      </div>
+
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 18, display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+        {/* Current Intention */}
+        <div>
+          <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: '.16em', color: '#4577b5', marginBottom: 9 }}>
+            CURRENT INTENTION
+          </div>
+          <div style={{ background: '#f6f8fa', border: '1px solid #e7ebef', borderRadius: 7, padding: '13px 14px', display: 'flex', flexDirection: 'column', gap: 9 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#2b3440' }}>{agent.plan}</span>
+              <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: '.06em', color: sc }}>{agent.state.toUpperCase()}</span>
+            </div>
+            <div style={{ fontSize: 10, color: '#69727f', lineHeight: 1.45 }}>{agent.task}</div>
+            <div style={{ marginTop: 2 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+                <span style={{ fontSize: 8, letterSpacing: '.08em', color: '#9aa4b0' }}>DEADLINE BUDGET</span>
+                <span style={{ fontSize: 9, color: '#7c8794' }}>{agent.budget} ms</span>
+              </div>
+              <div style={{ height: 4, borderRadius: 2, background: '#e7ebef', overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${pct}%`, background: sc, borderRadius: 2, transition: 'width .2s linear' }} />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* What it knows (Belief Base) */}
+        <div>
+          <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: '.16em', color: '#4577b5', marginBottom: 9 }}>
+            WHAT IT KNOWS
+          </div>
+          <div style={{ background: '#fff', border: '1px solid #e7ebef', borderRadius: 7, overflow: 'hidden' }}>
+            {(agent.beliefs || []).map((b, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                padding: '9px 14px', borderTop: i === 0 ? 'none' : '1px solid #f2f4f7' }}>
+                <span style={{ fontSize: 10, color: '#69727f' }}>{b.k}</span>
+                <span style={{ fontSize: 10, fontWeight: 500, color: b.vColor || '#2b3440', textAlign: 'right' }}>{b.v}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Goals (Desires) */}
+        <div>
+          <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: '.16em', color: '#4577b5', marginBottom: 9 }}>
+            GOALS
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+            {(agent.desires || []).map((d, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8,
+                fontSize: 10, lineHeight: 1.4, color: '#5b6675' }}>
+                <span style={{ color: '#b8c0c9', marginTop: 1 }}>›</span>
+                {d}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Recent Decisions (Strategy Trace) */}
+        <div>
+          <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: '.16em', color: '#4577b5', marginBottom: 9 }}>
+            RECENT DECISIONS
+          </div>
+          <div style={{ background: '#f6f8fa', border: '1px solid #e7ebef', borderRadius: 7, padding: '3px 0' }}>
+            {agent.traceEmpty ? (
+              <div style={{ padding: '10px 14px', fontSize: 9, color: '#aab3bd' }}>
+                idle · perceiving, no decisions yet.
+              </div>
+            ) : (agent.trace || []).map((tr, i) => (
+              <div key={i} style={{ display: 'flex', gap: 9, padding: '6px 14px' }}>
+                <span style={{ fontSize: 9, color: '#aab3bd', flexShrink: 0 }}>{tr.time}</span>
+                <span style={{ fontSize: 9, lineHeight: 1.45, color: '#5b6675' }}>{tr.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+// ─── Main App ─────────────────────────────────────────────────────────────────
+function App() {
+  const [state, setState]       = useState(null);
+  const [selectedSeg, setSelSeg] = useState('public-facing');
+  const [selAgent, setSelAgent] = useState(null);
+  const [connected, setConnected] = useState(false);
+
+  const simStateRef = useRef({ attackedSegs: [], mitigated: false, running: true });
+  const canvasRef   = useRef(null);
+
+  // ── WebSocket connection ────────────────────────────────────────────
+  useEffect(() => {
+    let ws, timer;
+    function connect() {
+      ws = new WebSocket(WS_URL);
+      ws.onopen  = () => setConnected(true);
+      ws.onclose = () => { setConnected(false); timer = setTimeout(connect, 2000); };
+      ws.onerror = () => ws.close();
+      ws.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        setState(data);
+        // Keep ref up-to-date for the canvas loop (no re-render needed)
+        const attackedSegs = Object.values(data.segments || {})
+          .filter(s => s.attack_pps > 0)
+          .map(s => s.id);
+        const mitigated = (data.quarantined_segs || []).length > 0 ||
+                          (data.blocked_ips || []).length > 0;
+        simStateRef.current = { attackedSegs, mitigated, running: data.running };
+      };
+    }
+    connect();
+    return () => { clearTimeout(timer); if (ws) ws.close(); };
+  }, []);
+
+  // ── Packet canvas animation ─────────────────────────────────────────
+  usePacketCanvas(canvasRef, simStateRef);
+
+  // ── Send scenario change to backend ────────────────────────────────
+  const wsRef = useRef(null);
+  useEffect(() => {
+    let ws;
+    function connect() {
+      ws = new WebSocket(WS_URL);
+      wsRef.current = ws;
+    }
+    // We already have a WS from the state hook above; share via a callback
+    // instead — simplest to just re-use the onmessage WS ref
+  }, []);
+
+  const sendScenario = useCallback((name) => {
+    // Broadcast directly via a new WS (or reuse)
+    const ws = new WebSocket(WS_URL);
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: 'scenario', name }));
+      setTimeout(() => ws.close(), 500);
+    };
+  }, []);
+
+  // ── Derived rendering data ──────────────────────────────────────────
+  const segs       = (state?.segments && Object.values(state.segments)) || SEGMENTS.map(s => ({ ...s, state: 'NORMAL', hist: [], pps: 0, baseline: 400 }));
+  const agents     = state?.agents || {};
+  const logs       = state?.logs   || [];
+  const metrics    = state?.metrics || { dr: 0, fpr: 0, mttr: 0, availability: 0, sw: 0 };
+  const scenario   = state?.scenario || 'calm';
+  const elapsed    = state?.t || 0;
+  const segMap     = Object.fromEntries(segs.map(s => [s.id, s]));
+
+  const selectedSegData = segMap[selectedSeg] || segs[0] || {};
+  const hostData = SEGDATA[selectedSeg] || SEGDATA['public-facing'];
+  const scenarioAtk = ['ddos', 'multi'].includes(scenario);
+
+  // Links on the topology SVG
+  const links = useMemo(() => {
+    const base = [
+      { x1: POS.attacker.x, y1: POS.attacker.y, x2: POS.edge.x, y2: POS.edge.y },
+      { x1: POS.edge.x,     y1: POS.edge.y,     x2: POS.core.x, y2: POS.core.y },
+    ];
+    ['A','B','C','D','E'].forEach(k => {
+      base.push({ x1: POS.core.x, y1: POS.core.y, x2: POS[k].x, y2: POS[k].y });
+    });
+    base.push({ x1: POS.core.x, y1: POS.core.y, x2: POS.tma.x, y2: POS.tma.y });
+    return base.map(l => {
+      const attacked = scenarioAtk && selectedSegData.state !== 'NORMAL';
+      const color = (l.x2 === POS.attacker.x || (attacked && l.x1 === POS.edge.x))
+        ? '#e7b6b0' : '#d3dae1';
+      return { ...l, color, w: 3, dash: '' };
+    });
+  }, [scenario, selectedSeg, selectedSegData]);
+
+  // ── Render helpers ──────────────────────────────────────────────────
+  const BASELINE = { 'public-facing': 500, server: 200, internal: 300, 'sec-mon': 50 };
+  const MAG      = { 'public-facing': 10,  server: 4,   internal: 3,   'sec-mon': 1.5 };
+
+  return (
+    <div style={{ width: 1520, minHeight: '100%', margin: '0 auto', background: '#eaedf1',
+      color: '#3a4452', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+
+      {/* ─── Connection banner ─────────────────────────────────────── */}
+      {!connected && (
+        <div style={{ position: 'fixed', bottom: 16, left: '50%', transform: 'translateX(-50%)',
+          background: '#2b3440', color: '#fff', fontSize: 11, padding: '8px 20px',
+          borderRadius: 8, zIndex: 100, letterSpacing: '.04em' }}>
+          Connecting to server… ◦
+        </div>
+      )}
+
+      {/* ─── Top: Segment Cards ────────────────────────────────────── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12, padding: '14px 16px 0' }}>
+        {SEGMENTS.map(seg => {
+          const sd = segMap[seg.id] || seg;
+          const hc = healthColor(sd.state || 'NORMAL');
+          const hb = healthBorder(sd.state || 'NORMAL');
+          const active = selectedSeg === seg.id;
+          return (
+            <div key={seg.id} onClick={() => setSelSeg(seg.id)} style={{
+              background: '#fff', border: `1px solid ${active ? hc : hb}`,
+              borderRadius: 9, padding: '11px 14px', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 11,
+              boxShadow: active ? `0 0 0 2px ${hc}22` : '0 1px 3px rgba(40,55,75,.05)',
+              transition: 'border-color .2s, box-shadow .2s',
+            }}>
+              <span style={{ width: 9, height: 9, borderRadius: '50%', background: hc, flexShrink: 0 }} />
+              <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.05em',
+                padding: '2px 6px', borderRadius: 4,
+                background: active ? `${hc}18` : '#f3f5f7',
+                color: active ? hc : '#6b7685' }}>
+                {seg.code}
+              </span>
+              <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1, lineHeight: 1.3 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#2b3440',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {seg.name}
+                </span>
+                <span style={{ fontSize: 9, color: '#9aa4b0' }}>{seg.cidr}</span>
+              </div>
+              <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: '.09em', color: hc, flexShrink: 0 }}>
+                {sd.state || 'NORMAL'}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ─── Scenario + Stats bar ──────────────────────────────────── */}
+      <div style={{ display: 'flex', alignItems: 'stretch', gap: 12, padding: '12px 16px' }}>
+        {/* Scenario switcher */}
+        <div style={{ background: '#fff', border: '1px solid #e2e7ec', borderRadius: 9,
+          padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+          <span style={{ fontSize: 9, letterSpacing: '.14em', color: '#9aa4b0' }}>SCENARIO</span>
+          {SCENARIOS.map(sc => {
+            const active = scenario === sc.id;
+            return (
+              <button key={sc.id} onClick={() => sendScenario(sc.id)} style={{
+                fontSize: 11, fontWeight: 500, letterSpacing: '.02em',
+                padding: '7px 13px', borderRadius: 6,
+                background: active ? '#4577b5' : '#f3f5f7',
+                border: `1px solid ${active ? '#4577b5' : '#e2e7ec'}`,
+                color: active ? '#fff' : '#6b7685',
+                transition: 'background .15s',
+              }}>{sc.label}</button>
+            );
+          })}
+          {/* Clock */}
+          <div style={{ marginLeft: 12, fontSize: 14, fontWeight: 500, color: '#9aa4b0', minWidth: 56 }}>
+            {fmt(elapsed)}
+          </div>
+        </div>
+
+        {/* Metrics bar */}
+        <div style={{ flex: 1, background: '#fff', border: '1px solid #e2e7ec', borderRadius: 9,
+          display: 'flex', alignItems: 'stretch' }}>
+          {[
+            { label: 'DETECTION RATE',  value: `${(metrics.dr * 100).toFixed(1)} %`,  color: metrics.dr > 0.9 ? C.green : metrics.dr > 0.7 ? C.amber : C.red },
+            { label: 'FALSE POSITIVE',  value: `${(metrics.fpr * 100).toFixed(1)} %`, color: metrics.fpr < 0.08 ? C.green : C.amber },
+            { label: 'MTTR',            value: metrics.mttr > 0 ? `${metrics.mttr} ms` : '— ms', color: metrics.mttr > 0 && metrics.mttr < 1000 ? C.green : metrics.mttr > 1000 ? C.red : '#9aa4b0' },
+            { label: 'AVAILABILITY',    value: `${(metrics.availability * 100).toFixed(2)} %`, color: metrics.availability > 0.99 ? C.green : C.amber },
+            { label: 'SOCIAL WELFARE',  value: metrics.sw > 0 ? metrics.sw.toFixed(3) : '—',   color: metrics.sw >= 0.8 ? C.green : metrics.sw >= 0.5 ? C.amber : '#9aa4b0' },
+          ].map((m, i) => (
+            <div key={i} style={{ flex: 1, padding: '9px 16px', display: 'flex', flexDirection: 'column',
+              gap: 2, justifyContent: 'center', borderLeft: i === 0 ? 'none' : '1px solid #eef1f4' }}>
+              <span style={{ fontSize: 9, letterSpacing: '.1em', color: '#9aa4b0' }}>{m.label}</span>
+              <span style={{ fontSize: 20, fontWeight: 600, color: m.color, lineHeight: 1 }}>{m.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ─── Body: Topology + Rail ─────────────────────────────────── */}
+      <div style={{ flex: 1, display: 'flex', gap: 12, padding: '0 16px' }}>
+
+        {/* ── Topology Stage ─────────────────────────────────────── */}
+        <div style={{ width: 1180, background: '#fff', border: '1px solid #e2e7ec',
+          borderRadius: 11, overflow: 'hidden', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+          {/* Stage header */}
+          <div style={{ height: 34, flexShrink: 0, display: 'flex', alignItems: 'center',
+            justifyContent: 'space-between', padding: '0 16px', borderBottom: '1px solid #eef1f4' }}>
+            <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.14em', color: '#6b7685' }}>
+              NETWORK TOPOLOGY · {SEGMENTS.find(s => s.id === selectedSeg)?.name}
+            </span>
+            <span style={{ fontSize: 9, letterSpacing: '.08em', color: '#b8c0c9' }}>
+              click agent or host to inspect · pub/sub bus below
+            </span>
+          </div>
+
+          {/* Stage canvas area */}
+          <div style={{ position: 'relative', width: 1180, height: 700, flexShrink: 0,
+            backgroundColor: '#f7f9fb',
+            backgroundImage: 'radial-gradient(circle, #dde3e9 1px, transparent 1px)',
+            backgroundSize: '24px 24px' }}>
+
+            {/* Static SVG links */}
+            <svg width="1180" height="700" viewBox="0 0 1180 700"
+              style={{ position: 'absolute', left: 0, top: 0, zIndex: 0 }}>
+              {links.map((l, i) => (
+                <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
+                  stroke={l.color} strokeWidth={l.w} strokeLinecap="round" />
+              ))}
+              {/* Bus baseline */}
+              <line x1="60" y1="605" x2="1120" y2="605" stroke="#cfd6dd" strokeWidth="1.5" />
+            </svg>
+
+            {/* Packet animation canvas */}
+            <canvas ref={canvasRef}
+              style={{ position: 'absolute', left: 0, top: 0, zIndex: 1, pointerEvents: 'none' }} />
+
+            {/* ── Attacker node ── */}
+            <div style={{ position: 'absolute', left: 106, top: 86, width: 68, height: 68, zIndex: 2,
+              borderRadius: 14, background: scenarioAtk ? '#fff5f5' : '#f7f9fb',
+              border: `1.5px dashed ${scenarioAtk ? C.red : '#cdd5dd'}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none"
+                stroke={scenarioAtk ? C.red : '#cdd5dd'} strokeWidth="1.6">
+                <path d="M6 17h11a3.5 3.5 0 0 0 .5-6.96A5 5 0 0 0 8 9.2 4 4 0 0 0 6 17z" />
+              </svg>
+            </div>
+            <div style={{ position: 'absolute', left: 60, top: 158, width: 160, textAlign: 'center', zIndex: 2, lineHeight: 1.35 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: scenarioAtk ? C.red : '#2b3440' }}>
+                Attacker / WAN
+              </div>
+              <div style={{ fontSize: 9, color: '#aab3bd' }}>0.0.0.0/0</div>
+            </div>
+
+            {/* ── Edge Router ── */}
+            <div style={{ position: 'absolute', left: 106, top: 296, width: 68, height: 68, zIndex: 2,
+              borderRadius: '50%', background: '#fff', border: '1.5px solid #cdd5dd',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 1px 3px rgba(40,55,75,.06)' }}>
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#5b6675" strokeWidth="1.5">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M12 2v4M12 18v4M2 12h4M18 12h4M5 5l2.5 2.5M16.5 16.5L19 19M19 5l-2.5 2.5M7.5 16.5L5 19" />
+              </svg>
+            </div>
+            <div style={{ position: 'absolute', left: 54, top: 368, width: 172, textAlign: 'center', zIndex: 2, lineHeight: 1.35 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: '#2b3440' }}>Edge Router</div>
+              <div style={{ fontSize: 9, color: '#9aa4b0' }}>{hostData.edge}</div>
+              <div style={{ fontSize: 9, color: '#b8c0c9' }}>{hostData.edgeIp}</div>
+            </div>
+
+            {/* ── Core Switch ── */}
+            <div style={{ position: 'absolute', left: 392, top: 298, width: 76, height: 64, zIndex: 2,
+              borderRadius: 11, background: '#fff', border: '1.5px solid #cdd5dd',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 1px 3px rgba(40,55,75,.06)' }}>
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#5b6675" strokeWidth="1.5">
+                <rect x="3" y="8" width="18" height="9" rx="2" />
+                <path d="M7 12h.01M11 12h.01M15 12h.01" />
+              </svg>
+            </div>
+            <div style={{ position: 'absolute', left: 344, top: 366, width: 172, textAlign: 'center', zIndex: 2, lineHeight: 1.35 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: '#2b3440' }}>Core Switch</div>
+              <div style={{ fontSize: 9, color: '#9aa4b0' }}>{hostData.core}</div>
+            </div>
+
+            {/* ── TMA-1 chip ── */}
+            {(() => {
+              const tma = agents['TMA:1'];
+              const sc2 = stateColor(tma?.state || 'mon');
+              return (
+                <div onClick={() => setSelAgent(selAgent === 'TMA:1' ? null : 'TMA:1')}
+                  style={{ position: 'absolute', left: 350, top: 476, width: 160, height: 48, zIndex: 2,
+                    borderRadius: 9, background: selAgent === 'TMA:1' ? '#f0f4ff' : '#fff',
+                    border: `1px solid ${selAgent === 'TMA:1' ? C.blue : '#e2e7ec'}`,
+                    display: 'flex', alignItems: 'center', gap: 9, padding: '0 12px',
+                    cursor: 'pointer', boxShadow: '0 1px 3px rgba(40,55,75,.05)' }}>
+                  <span style={{ width: 26, height: 26, borderRadius: 7, background: `${sc2}18`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={sc2} strokeWidth="1.8">
+                      <circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" />
+                    </svg>
+                  </span>
+                  <div style={{ lineHeight: 1.25, minWidth: 0 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: '#2b3440' }}>TMA-1</div>
+                    <div style={{ fontSize: 8, color: '#9aa4b0' }}>Traffic Monitor · SPAN</div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* ── Host Cards (A–E) ── */}
+            {['A','B','C','D','E'].map(k => {
+              const slot = hostData.slots[k];
+              const pos  = { left: HOSTLEFT[k], top: HOSTTOP[k] };
+              const segState = selectedSegData.state || 'NORMAL';
+              const hc = healthColor(segState);
+              const hb = healthBorder(segState);
+              return (
+                <div key={k} style={{ position: 'absolute', left: pos.left, top: pos.top,
+                  width: 212, height: 66, zIndex: 2, borderRadius: 10,
+                  background: '#fff', border: `1px solid ${hb}`,
+                  display: 'flex', alignItems: 'center', gap: 11, padding: '0 13px',
+                  boxShadow: '0 1px 3px rgba(40,55,75,.05)', transition: 'border-color .25s' }}>
+                  <span style={{ width: 34, height: 34, borderRadius: 8, background: `${hc}14`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={hc} strokeWidth="1.5">
+                      <rect x="4" y="3" width="16" height="7" rx="1.5" />
+                      <rect x="4" y="14" width="16" height="7" rx="1.5" />
+                      <path d="M8 6.5h.01M8 17.5h.01" />
+                    </svg>
+                  </span>
+                  <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1, lineHeight: 1.32 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: '#2b3440' }}>{slot.name}</span>
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: hc }} />
+                    </div>
+                    <span style={{ fontSize: 9, color: '#9aa4b0' }}>{slot.host}</span>
+                    <span style={{ fontSize: 9, color: '#b8c0c9' }}>{slot.ip}</span>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* ── Bus label ── */}
+            <div style={{ position: 'absolute', left: 0, top: 566, width: 1180,
+              textAlign: 'center', zIndex: 2 }}>
+              <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: '.18em', color: '#aab3bd' }}>
+                PUB / SUB MESSAGE BUS · MAS COORDINATION LAYER
+              </span>
+            </div>
+
+            {/* ── Bus Agent Chips ── */}
+            {BUS_AGENTS.map(ba => {
+              const ag = agents[ba.id];
+              const sc2 = stateColor(ag?.state || 'idle');
+              const posX = { 'ACA:1': 150, 'TIA:1': 410, 'RCA:1': 640, 'RAA:1': 890 }[ba.id] || 0;
+              const selected = selAgent === ba.id;
+              return (
+                <div key={ba.id} onClick={() => setSelAgent(selected ? null : ba.id)} style={{
+                  position: 'absolute', left: posX, top: 630, width: 152, height: 52, zIndex: 2,
+                  borderRadius: 9, background: selected ? '#f0f4ff' : '#fff',
+                  border: `1px solid ${selected ? C.blue : '#e2e7ec'}`,
+                  borderTop: `3px solid ${ba.accent}`,
+                  display: 'flex', flexDirection: 'column', justifyContent: 'center',
+                  padding: '0 13px', cursor: 'pointer',
+                  boxShadow: '0 1px 3px rgba(40,55,75,.05)', transition: 'border-color .2s',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: sc2 }} />
+                    <span style={{ fontSize: 11, fontWeight: 600, color: '#2b3440' }}>{ba.code}</span>
+                  </div>
+                  <span style={{ fontSize: 8, color: '#9aa4b0', marginTop: 1 }}>{ba.role}</span>
+                </div>
+              );
+            })}
+
+          </div>
+
+          {/* ── Legend ── */}
+          <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', flexWrap: 'wrap',
+            gap: 16, padding: '11px 16px', borderTop: '1px solid #eef1f4' }}>
+            <span style={{ fontSize: 9, letterSpacing: '.12em', color: '#aab3bd' }}>LEGEND</span>
+            {LEGEND.map((l, i) => (
+              <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
+                fontSize: 9, color: '#6b7685' }}>
+                <span style={{ width: 9, height: 9, borderRadius: '50%', background: l.color }} />
+                {l.label}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Right Rail ─────────────────────────────────────────── */}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+          {/* Bandwidth panel */}
+          <div style={{ background: '#fff', border: '1px solid #e2e7ec', borderRadius: 11,
+            flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ height: 34, flexShrink: 0, display: 'flex', alignItems: 'center',
+              justifyContent: 'space-between', padding: '0 14px', borderBottom: '1px solid #eef1f4' }}>
+              <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.14em', color: '#6b7685' }}>BANDWIDTH</span>
+              <span style={{ fontSize: 9, letterSpacing: '.06em', color: '#b8c0c9' }}>pps · live</span>
+            </div>
+            {SEGMENTS.map(seg => {
+              const sd  = segMap[seg.id] || { hist: [], pps: 0, state: 'NORMAL' };
+              const bl  = BASELINE[seg.id] || 400;
+              const peak = Math.max(sd.pps || 0, bl * (MAG[seg.id] || 2)) * 1.1;
+              const active = selectedSeg === seg.id;
+              const hc = healthColor(sd.state || 'NORMAL');
+              return (
+                <div key={seg.id} onClick={() => setSelSeg(seg.id)} style={{
+                  padding: '11px 14px', borderTop: '1px solid #f2f4f7', cursor: 'pointer',
+                  background: active ? '#f9fbff' : 'transparent', display: 'flex', flexDirection: 'column', gap: 5,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 10, fontWeight: 600, color: '#5b6675' }}>
+                      {seg.code} <span style={{ color: '#aab3bd', fontWeight: 400 }}>{seg.name}</span>
+                    </span>
+                    <span style={{ display: 'flex', alignItems: 'baseline', gap: 7 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: hc }}>
+                        {(sd.pps || 0).toFixed(0)} pps
+                      </span>
+                      {sd.attack_pps > 0 && (
+                        <span style={{ fontSize: 9, fontWeight: 500, color: C.red }}>
+                          +{sd.attack_pps.toFixed(0)} atk
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  <Sparkline hist={sd.hist || []} baseline={bl} health={sd.state || 'NORMAL'} />
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Activity Log */}
+          <div style={{ flex: 1, minHeight: 0, background: '#fff', border: '1px solid #e2e7ec',
+            borderRadius: 11, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ height: 34, flexShrink: 0, display: 'flex', alignItems: 'center',
+              justifyContent: 'space-between', padding: '0 14px', borderBottom: '1px solid #eef1f4' }}>
+              <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.14em', color: '#6b7685' }}>
+                ACTIVITY LOG
+              </span>
+              <span style={{ fontSize: 9, color: '#9aa4b0' }}>
+                {logs.length} events
+              </span>
+            </div>
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+              {logs.length === 0 ? (
+                <div style={{ padding: '20px 14px', fontSize: 9, color: '#aab3bd', textAlign: 'center' }}>
+                  Waiting for events…
+                </div>
+              ) : logs.map(ev => (
+                <div key={ev.id} style={{ padding: '9px 14px', borderTop: '1px solid #f2f4f7',
+                  display: 'flex', gap: 9 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: ev.color,
+                    flexShrink: 0, marginTop: 5 }} />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
+                    <span style={{ fontSize: 10, lineHeight: 1.4, color: '#3a4452' }}>{ev.text}</span>
+                    <span style={{ fontSize: 8, letterSpacing: '.03em', color: '#aab3bd' }}>
+                      {ev.time} · {ev.agent}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div style={{ height: 16, flexShrink: 0 }} />
+
+      {/* ─── Agent Inspector drawer ─────────────────────────────────── */}
+      {selAgent && agents[selAgent] && (
+        <AgentInspector
+          agent={agents[selAgent]}
+          onClose={() => setSelAgent(null)}
+        />
+      )}
+
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
